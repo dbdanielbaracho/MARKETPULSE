@@ -1,0 +1,10 @@
+version: 1
+country_code: BR
+locale: pt-BR
+currency: BRL
+enabled: false
+features:
+  discovery: false
+  outbound: false
+  automated_content: false
+venues: {}

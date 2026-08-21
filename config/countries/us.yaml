@@ -1,0 +1,16 @@
+version: 1
+country_code: US
+locale: en-US
+currency: USD
+enabled: true
+features:
+  discovery: true
+  outbound: true
+  automated_content: false
+venues:
+  kalshi:
+    discovery_enabled: true
+    outbound_enabled: false
+  polymarket:
+    discovery_enabled: true
+    outbound_enabled: false

@@ -1,0 +1,10 @@
+version: 1
+country_code: GB
+locale: en-GB
+currency: GBP
+enabled: false
+features:
+  discovery: false
+  outbound: false
+  automated_content: false
+venues: {}
