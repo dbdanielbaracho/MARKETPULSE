@@ -1,0 +1,18 @@
+[project]
+name = "marketpulse"
+version = "0.1.0"
+description = "Global-ready prediction market intelligence and outbound distribution platform"
+requires-python = ">=3.13"
+dependencies = [
+  "fastapi",
+  "uvicorn",
+  "httpx",
+  "pydantic",
+  "pyyaml",
+  "jinja2"
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q"
