@@ -1,0 +1,16 @@
+version: 1
+venue_id: polymarket
+enabled: true
+base_url: https://gamma-api.polymarket.com
+transport:
+  timeout_seconds: 10
+  max_attempts: 4
+  backoff_seconds: 1
+pagination:
+  strategy: keyset
+capabilities:
+  public_market_discovery: true
+  outbound: false
+commercial:
+  partner_program_verified: false
+  deeplink_template: null
