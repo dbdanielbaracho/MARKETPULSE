@@ -1,11 +1,13 @@
 version: 1
 venue_id: kalshi
 enabled: true
-base_url: https://api.elections.kalshi.com/trade-api/v2
+base_url: https://external-api.kalshi.com/trade-api/v2
 transport:
   timeout_seconds: 10
   max_attempts: 4
   backoff_seconds: 1
+pagination:
+  strategy: cursor
 capabilities:
   public_market_discovery: true
   outbound: false
