@@ -9,7 +9,8 @@ dependencies = [
   "httpx",
   "pydantic",
   "pyyaml",
-  "jinja2"
+  "jinja2",
+  "openai>=1.0,<3"
 ]
 
 [tool.pytest.ini_options]
