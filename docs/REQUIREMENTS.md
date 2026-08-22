@@ -12,11 +12,11 @@ This registry is the scope-control source of truth. A requirement may not disapp
 | MP-006 | Polymarket public-data ingestion | VERIFIED | normalized adapter + tests |
 | MP-007 | Normalized market model | VERIFIED | domain model + tests |
 | MP-008 | Snapshot history | VERIFIED | SQLite WAL snapshot store + tests |
-| MP-009 | Movers/trending discovery | IN_PROGRESS | signal engine exists; ranking/API/UI pending |
-| MP-010 | Market equivalence must not be inferred from title similarity alone | REQUIRED | contract-aware matching tests required |
+| MP-009 | Movers/trending discovery | IN_PROGRESS | signal engine + ranking API + dynamic UI; live worker pending |
+| MP-010 | Market equivalence must not be inferred from title similarity alone | IN_PROGRESS | fail-safe contract matcher + adversarial tests; CI/release evidence pending |
 | MP-011 | Market comparison UI with explicit non-equivalence handling | REQUIRED | UX + matching gate |
 | MP-012 | News/evidence context engine | REQUIRED | source provenance + freshness gate |
-| MP-013 | Automated AI content candidates | REQUIRED | score/policy/queue tests |
+| MP-013 | Automated AI content candidates | IN_PROGRESS | policy-driven candidate classifier; evidence engine/queue pending |
 | MP-014 | Automated website publishing | REQUIRED | content lifecycle + rollback |
 | MP-015 | SEO automation | REQUIRED | metadata/sitemap/canonical/schema validation |
 | MP-016 | Instagram distribution | REQUIRED | provider/policy integration |
@@ -27,9 +27,9 @@ This registry is the scope-control source of truth. A requirement may not disapp
 | MP-021 | Partner attribution | REQUIRED | click/event state machine |
 | MP-022 | Partner revenue states: pending/approved/payable/paid/reversed etc. | REQUIRED | reconciliation model/tests |
 | MP-023 | Revenue dashboard; no unnecessary user-funds accounting | REQUIRED | dashboard/reconciliation |
-| MP-024 | Mobile-first, simple, accessible website | IN_PROGRESS | baseline UI; usability/accessibility audit pending |
-| MP-025 | Search and category discovery | IN_PROGRESS | baseline UI; dynamic data pending |
-| MP-026 | Freshness displayed honestly; never claim live without evidence | REQUIRED | freshness contract/tests |
+| MP-024 | Mobile-first, simple, accessible website | IN_PROGRESS | dynamic baseline UI; usability/accessibility audit pending |
+| MP-025 | Search and category discovery | IN_PROGRESS | dynamic API/UI implemented; live worker pending |
+| MP-026 | Freshness displayed honestly; never claim live without evidence | IN_PROGRESS | timestamp-based UI freshness; stale-data policy pending |
 | MP-027 | GitHub PR + CI gates | VERIFIED | repository workflow |
 | MP-028 | Railway staging with deterministic healthcheck | VERIFIED | Docker deployment + /health |
 | MP-029 | Secrets never committed | REQUIRED | secret scanning/config gate |
