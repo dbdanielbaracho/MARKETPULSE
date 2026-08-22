@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -14,6 +15,7 @@ from app.services.content_queue import ContentCandidate, ContentDecision
 from app.services.content_drafts import ContentDraft
 
 CandidateState = Literal["queued", "claimed", "completed", "failed", "rejected"]
+PublicationState = Literal["active", "rolled_back"]
 _ALLOWED_TRANSITIONS: dict[str, set[str]] = {
     "queued": {"claimed", "rejected"},
     "claimed": {"completed", "failed"},
@@ -41,6 +43,21 @@ class StoredDraft:
     generator: str
     state: str
     created_at: datetime
+
+
+@dataclass(frozen=True)
+class StoredPublication:
+    publication_id: str
+    draft_id: str
+    article_key: str
+    slug: str
+    version: int
+    headline: str
+    body: str
+    citation_ids: tuple[str, ...]
+    state: PublicationState
+    published_at: datetime
+    rolled_back_at: datetime | None
 
 
 @dataclass(frozen=True)
@@ -118,6 +135,32 @@ class ContentQueueStore:
                 );
                 CREATE INDEX IF NOT EXISTS idx_content_draft_state
                     ON content_drafts(state, created_at);
+                CREATE TABLE IF NOT EXISTS content_publications (
+                    publication_id TEXT PRIMARY KEY,
+                    draft_id TEXT NOT NULL UNIQUE,
+                    article_key TEXT NOT NULL,
+                    slug TEXT NOT NULL UNIQUE,
+                    version INTEGER NOT NULL CHECK(version >= 1),
+                    headline TEXT NOT NULL,
+                    body TEXT NOT NULL,
+                    citation_ids TEXT NOT NULL,
+                    state TEXT NOT NULL CHECK(state IN ('active', 'rolled_back')),
+                    published_at TEXT NOT NULL,
+                    rolled_back_at TEXT,
+                    FOREIGN KEY(draft_id) REFERENCES content_drafts(draft_id),
+                    UNIQUE(article_key, version)
+                );
+                CREATE INDEX IF NOT EXISTS idx_content_publication_state
+                    ON content_publications(state, published_at);
+                CREATE TABLE IF NOT EXISTS content_publication_audit (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    publication_id TEXT NOT NULL,
+                    from_state TEXT,
+                    to_state TEXT NOT NULL CHECK(to_state IN ('active', 'rolled_back')),
+                    reason TEXT NOT NULL,
+                    occurred_at TEXT NOT NULL,
+                    FOREIGN KEY(publication_id) REFERENCES content_publications(publication_id)
+                );
                 CREATE TABLE IF NOT EXISTS content_draft_audit (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     draft_id TEXT NOT NULL,
@@ -504,3 +547,179 @@ class ContentQueueStore:
                 (since.isoformat(),),
             ).fetchone()
         return int(row[0])
+
+    @staticmethod
+    def _publication_from_row(row: tuple) -> StoredPublication:
+        return StoredPublication(
+            publication_id=row[0],
+            draft_id=row[1],
+            article_key=row[2],
+            slug=row[3],
+            version=row[4],
+            headline=row[5],
+            body=row[6],
+            citation_ids=tuple(json.loads(row[7])),
+            state=row[8],
+            published_at=datetime.fromisoformat(row[9]),
+            rolled_back_at=datetime.fromisoformat(row[10]) if row[10] else None,
+        )
+
+    @staticmethod
+    def _slug(headline: str, publication_id: str) -> str:
+        base = re.sub(r"[^a-z0-9]+", "-", headline.casefold()).strip("-")[:70]
+        return f"{base or 'prediction-market-brief'}-{publication_id[-8:]}"
+
+    def publish_draft(
+        self,
+        draft_id: str,
+        reason: str,
+        now: datetime | None = None,
+    ) -> StoredPublication:
+        if not reason.strip():
+            raise ValueError("publication reason is required")
+        timestamp = (now or datetime.now(timezone.utc)).isoformat()
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                """SELECT d.state, d.candidate_id, d.headline, d.body, d.citation_ids,
+                          c.market_id
+                   FROM content_drafts d
+                   JOIN content_candidates c ON c.candidate_id = d.candidate_id
+                   WHERE d.draft_id = ?""",
+                (draft_id,),
+            ).fetchone()
+            if row is None:
+                raise KeyError(draft_id)
+            if row[0] != "approved":
+                raise ValueError(f"draft must be approved before publication: {row[0]}")
+            existing = connection.execute(
+                """SELECT publication_id, draft_id, article_key, slug, version, headline,
+                          body, citation_ids, state, published_at, rolled_back_at
+                   FROM content_publications WHERE draft_id = ?""",
+                (draft_id,),
+            ).fetchone()
+            if existing is not None:
+                return self._publication_from_row(existing)
+            article_key = row[5]
+            version = connection.execute(
+                "SELECT COALESCE(MAX(version), 0) + 1 FROM content_publications WHERE article_key = ?",
+                (article_key,),
+            ).fetchone()[0]
+            publication_id = f"pub_{sha256(draft_id.encode()).hexdigest()[:20]}"
+            slug = self._slug(row[2], publication_id)
+            connection.execute(
+                """INSERT INTO content_publications(
+                       publication_id, draft_id, article_key, slug, version, headline, body,
+                       citation_ids, state, published_at, rolled_back_at
+                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, NULL)""",
+                (publication_id, draft_id, article_key, slug, version, row[2], row[3], row[4], timestamp),
+            )
+            connection.execute(
+                """INSERT INTO content_publication_audit(
+                       publication_id, from_state, to_state, reason, occurred_at
+                   ) VALUES (?, NULL, 'active', ?, ?)""",
+                (publication_id, reason.strip(), timestamp),
+            )
+            stored = connection.execute(
+                """SELECT publication_id, draft_id, article_key, slug, version, headline,
+                          body, citation_ids, state, published_at, rolled_back_at
+                   FROM content_publications WHERE publication_id = ?""",
+                (publication_id,),
+            ).fetchone()
+        return self._publication_from_row(stored)
+
+    def rollback_publication(
+        self,
+        publication_id: str,
+        reason: str,
+        now: datetime | None = None,
+    ) -> StoredPublication:
+        if not reason.strip():
+            raise ValueError("rollback reason is required")
+        timestamp = (now or datetime.now(timezone.utc)).isoformat()
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT state FROM content_publications WHERE publication_id = ?",
+                (publication_id,),
+            ).fetchone()
+            if row is None:
+                raise KeyError(publication_id)
+            if row[0] != "active":
+                raise ValueError(f"publication is not active: {row[0]}")
+            connection.execute(
+                """UPDATE content_publications
+                   SET state = 'rolled_back', rolled_back_at = ?
+                   WHERE publication_id = ?""",
+                (timestamp, publication_id),
+            )
+            connection.execute(
+                """INSERT INTO content_publication_audit(
+                       publication_id, from_state, to_state, reason, occurred_at
+                   ) VALUES (?, 'active', 'rolled_back', ?, ?)""",
+                (publication_id, reason.strip(), timestamp),
+            )
+            stored = connection.execute(
+                """SELECT publication_id, draft_id, article_key, slug, version, headline,
+                          body, citation_ids, state, published_at, rolled_back_at
+                   FROM content_publications WHERE publication_id = ?""",
+                (publication_id,),
+            ).fetchone()
+        return self._publication_from_row(stored)
+
+    def publications(self, state: PublicationState = "active", limit: int = 50) -> list[StoredPublication]:
+        if state not in {"active", "rolled_back"}:
+            raise ValueError("invalid publication state")
+        if not 1 <= limit <= 100:
+            raise ValueError("publication limit must be between 1 and 100")
+        with self._connect() as connection:
+            rows = connection.execute(
+                """SELECT publication_id, draft_id, article_key, slug, version, headline,
+                          body, citation_ids, state, published_at, rolled_back_at
+                   FROM content_publications WHERE state = ?
+                   ORDER BY published_at DESC, publication_id DESC LIMIT ?""",
+                (state, limit),
+            ).fetchall()
+        return [self._publication_from_row(row) for row in rows]
+
+    def publication(self, slug: str, include_rolled_back: bool = False) -> StoredPublication | None:
+        query = """SELECT publication_id, draft_id, article_key, slug, version, headline,
+                          body, citation_ids, state, published_at, rolled_back_at
+                   FROM content_publications WHERE slug = ?"""
+        params: tuple[object, ...] = (slug,)
+        if not include_rolled_back:
+            query += " AND state = 'active'"
+        with self._connect() as connection:
+            row = connection.execute(query, params).fetchone()
+        return self._publication_from_row(row) if row is not None else None
+
+    def publication_evidence(self, publication_id: str) -> tuple[EvidenceItem, ...]:
+        with self._connect() as connection:
+            row = connection.execute(
+                """SELECT d.candidate_id
+                   FROM content_publications p
+                   JOIN content_drafts d ON d.draft_id = p.draft_id
+                   WHERE p.publication_id = ?""",
+                (publication_id,),
+            ).fetchone()
+        if row is None:
+            raise KeyError(publication_id)
+        return self.evidence(row[0])
+
+    def publication_audit(self, publication_id: str) -> list[tuple[str | None, str, str]]:
+        with self._connect() as connection:
+            return connection.execute(
+                """SELECT from_state, to_state, reason
+                   FROM content_publication_audit WHERE publication_id = ? ORDER BY id""",
+                (publication_id,),
+            ).fetchall()
+
+    def publication_counts(self) -> dict[str, int]:
+        result = {"active": 0, "rolled_back": 0}
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT state, COUNT(*) FROM content_publications GROUP BY state"
+            ).fetchall()
+        result.update({state: count for state, count in rows})
+        return result
+

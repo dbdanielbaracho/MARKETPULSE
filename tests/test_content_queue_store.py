@@ -260,3 +260,73 @@ def test_drafts_created_since_supports_daily_limit(tmp_path):
     assert store.drafts_created_since(datetime(2026, 8, 23, tzinfo=timezone.utc)) == 0
     with pytest.raises(ValueError, match="timezone-aware"):
         store.drafts_created_since(datetime(2026, 8, 22))
+
+
+def test_approved_draft_publication_is_versioned_idempotent_and_rollbackable(tmp_path):
+    store = ContentQueueStore(tmp_path / "queue.db")
+    bundle = evidence_bundle()
+    store.enqueue(candidate(), bundle, NOW)
+    claimed = store.claim_next(NOW)
+    draft = store.save_draft(
+        claimed.candidate_id,
+        ContentDraft(
+            headline="Federal Reserve outlook",
+            body="Evidence-grounded article body.",
+            citation_ids=tuple(item.evidence_id for item in bundle.items),
+        ),
+        NOW,
+    )
+
+    with pytest.raises(ValueError, match="must be approved"):
+        store.publish_draft(draft.draft_id, "publish_before_review", NOW)
+
+    store.review_draft(draft.draft_id, "approved", "sources_verified", NOW)
+    published = store.publish_draft(draft.draft_id, "editor_released", NOW)
+    repeated = store.publish_draft(draft.draft_id, "idempotent_retry", NOW)
+
+    assert repeated == published
+    assert published.state == "active"
+    assert published.version == 1
+    assert published.slug.startswith("federal-reserve-outlook-")
+    assert store.publication(published.slug) == published
+    assert store.publications() == [published]
+    assert {item.publisher for item in store.publication_evidence(published.publication_id)} == {
+        "Federal Reserve",
+        "NPR",
+    }
+    assert store.publication_counts() == {"active": 1, "rolled_back": 0}
+    assert store.publication_audit(published.publication_id) == [
+        (None, "active", "editor_released"),
+    ]
+
+    rolled_back = store.rollback_publication(
+        published.publication_id,
+        "material_source_correction",
+        NOW,
+    )
+    assert rolled_back.state == "rolled_back"
+    assert store.publication(published.slug) is None
+    assert store.publication(published.slug, include_rolled_back=True) == rolled_back
+    assert store.publication_counts() == {"active": 0, "rolled_back": 1}
+    assert store.publication_audit(published.publication_id) == [
+        (None, "active", "editor_released"),
+        ("active", "rolled_back", "material_source_correction"),
+    ]
+
+    with pytest.raises(ValueError, match="not active"):
+        store.rollback_publication(published.publication_id, "repeat", NOW)
+
+
+def test_publication_requires_reason_and_known_records(tmp_path):
+    store = ContentQueueStore(tmp_path / "queue.db")
+
+    with pytest.raises(ValueError, match="reason"):
+        store.publish_draft("missing", "", NOW)
+    with pytest.raises(KeyError):
+        store.publish_draft("missing", "manual_release", NOW)
+    with pytest.raises(ValueError, match="reason"):
+        store.rollback_publication("missing", "", NOW)
+    with pytest.raises(KeyError):
+        store.rollback_publication("missing", "editor_rollback", NOW)
+    with pytest.raises(ValueError, match="invalid publication state"):
+        store.publications("invalid")
