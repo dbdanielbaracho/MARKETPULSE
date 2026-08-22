@@ -12,8 +12,8 @@ from secrets import compare_digest, token_urlsafe
 from urllib.parse import urlsplit
 from typing import Annotated, Literal
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query
-from fastapi.responses import HTMLResponse, PlainTextResponse, Response
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
+from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
 from pydantic import BaseModel, Field
 
 from app.adapters.kalshi import KalshiAdapter
@@ -31,7 +31,7 @@ from app.services.social_distribution import all_channel_readiness
 from app.storage.content_queue import ContentQueueStore, PersistenceProbe
 from app.storage.snapshots import SnapshotStore
 
-APP_VERSION = "0.27.0"
+APP_VERSION = "0.27.1"
 
 
 class DiscoveryMarket(BaseModel):
@@ -454,6 +454,18 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="MarketPulse", version=APP_VERSION, lifespan=lifespan)
+
+
+@app.middleware("http")
+async def redirect_www_to_canonical(request: Request, call_next):
+    """Keep one public origin so links, analytics, and search signals do not split."""
+    hostname = (request.url.hostname or "").lower()
+    if hostname == "www.predibeacon.com":
+        target = f"{_public_base_url()}{request.url.path}"
+        if request.url.query:
+            target = f"{target}?{request.url.query}"
+        return RedirectResponse(url=target, status_code=308)
+    return await call_next(request)
 
 
 @app.get("/health")
