@@ -122,3 +122,22 @@ def test_market_evidence_preserves_primary_venue_provenance():
 def test_market_evidence_returns_404_for_unknown_market():
     set_discovery_markets([])
     assert client.get("/api/v1/evidence", params={"market_id": "missing"}).status_code == 404
+
+
+def test_market_evidence_bounds_long_venue_titles():
+    now = datetime.now(timezone.utc)
+    set_discovery_markets([
+        DiscoveryMarket(
+            canonical_id="kalshi:long",
+            title="Long combined contract " + ("selection, " * 60),
+            venue="kalshi",
+            probability=.5,
+            volume_usd=1,
+            trend_score=1,
+            observed_at=now,
+            source_url="https://kalshi.com/markets/long",
+        )
+    ])
+    response = client.get("/api/v1/evidence", params={"market_id": "kalshi:long"})
+    assert response.status_code == 200
+    assert len(response.json()["items"][0]["title"]) <= 300
