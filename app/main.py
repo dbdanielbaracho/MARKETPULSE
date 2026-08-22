@@ -29,7 +29,7 @@ from app.services.matching import MarketContractFacts, decide_match
 from app.storage.content_queue import ContentQueueStore, PersistenceProbe
 from app.storage.snapshots import SnapshotStore
 
-APP_VERSION = "0.21.0"
+APP_VERSION = "0.22.0"
 
 
 class DiscoveryMarket(BaseModel):
@@ -690,7 +690,7 @@ def home() -> str:
         {
             "@context": "https://schema.org",
             "@type": "WebSite",
-            "name": "MarketPulse",
+            "name": "PrediBeacon",
             "url": canonical,
             "description": "Prediction market intelligence from public market data.",
         },
@@ -700,7 +700,7 @@ def home() -> str:
         f'<link rel="canonical" href="{html.escape(canonical, quote=True)}">'
         f'<meta property="og:url" content="{html.escape(canonical, quote=True)}">'
         '<meta property="og:type" content="website">'
-        '<meta property="og:title" content="MarketPulse — Prediction market intelligence">'
+        '<meta property="og:title" content="PrediBeacon — Prediction market intelligence">'
         '<meta property="og:description" content="Discover what public prediction markets are pricing now.">'
         f'<script type="application/ld+json">{structured_data}</script>'
     )
