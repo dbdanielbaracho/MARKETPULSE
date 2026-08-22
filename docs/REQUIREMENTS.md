@@ -38,7 +38,7 @@ This registry is the scope-control source of truth. A requirement may not disapp
 | MP-032 | Partner economics never invented; require evidence/config | IN_PROGRESS | router requires commercial_verified, commission absent without evidence, and partner-readiness checklist captures required contract/reconciliation proof; config validation pending |
 | MP-033 | Global-ready locale/currency/timezone/policy boundaries | IN_PROGRESS | country packs plus explicit US, Brazil and unknown-country policy boundaries; runtime localization pending |
 | MP-034 | Future integration path with broader global platform preserved | VERIFIED | accepted ADR 0001, runtime-checkable MarketFetcher port, normalized domain boundary and regression tests prove new venue adapters require no core rewrite |
-| MP-035 | Final evidence audit: requirement -> code -> config -> test -> result | REQUIRED | release checklist |
+| MP-035 | Final evidence audit: requirement -> code -> config -> test -> result | VERIFIED | `docs/evidence/READINESS_AUDIT_0.38.0.md` maps internal release areas to implementation, tests and explicit external gates |
 | MP-036 | Every discoverable market has an internal PrediBeacon detail journey before outbound | VERIFIED | stable hash-backed canonical slugs, detail page/API, charts, signals, timeline, related markets and explicit outbound choice implemented |
 | MP-037 | Preserve PrediBeacon while external venue opens separately | IN_PROGRESS | venue CTA uses a new tab with explicit external-platform notice; live browser evidence pending |
 | MP-038 | First-party watchlist without requiring account or custody | VERIFIED | local-browser add/remove and dedicated responsive watchlist implemented; no account or custody required |
@@ -51,9 +51,9 @@ This registry is the scope-control source of truth. A requirement may not disapp
 | MP-045 | PrediBeacon Pro subscriptions for advanced intelligence | REQUIRED | product packaging, entitlements and billing pending |
 | MP-046 | Commercial API for normalized data and proprietary signals | IN_PROGRESS | hashed one-time API keys, scoped markets/history access, atomic daily quotas and starter/pro/business plan metadata implemented; billing and customer portal pending |
 | MP-047 | PrediBeacon remains a single public brand; white label is excluded | VERIFIED | explicit product-scope decision; no third-party branded instances or reseller mode |
-| MP-048 | Related-market discovery retains users inside PrediBeacon | IN_PROGRESS | conservative title/category related-market API and internal links implemented; contract-equivalence labels pending |
+| MP-048 | Related-market discovery retains users inside PrediBeacon | VERIFIED | related-market API returns explicit related/insufficient-evidence labels, reasons and `equivalent_contracts=false`; UI repeats the non-equivalence warning |
 | MP-049 | Daily Top 10 discovery surfaces trending, movers and volume rankings | VERIFIED | responsive public Top 10 view uses live normalized ranking API and preserves onsite campaign attribution |
-| MP-050 | Installable mobile web experience | IN_PROGRESS | web manifest, standalone metadata and bounded same-origin service-worker shell implemented; icons and offline data-state design pending |
+| MP-050 | Installable mobile web experience | VERIFIED | complete manifest identity, branded any/maskable SVG icon, standalone metadata and versioned same-origin service-worker shell with cached trust pages |
 | MP-051 | Commercial API credentials are never stored in plaintext | VERIFIED | one-time pb_live secret issuance, SHA-256 at-rest hashing, protected admin creation, scope checks and quota tests implemented |
 | MP-052 | Partner reconciliation events are authenticated and replay-bounded | VERIFIED | venue-specific HMAC-SHA256 signatures, five-minute timestamp window, exact venue validation, idempotent event IDs and adversarial tests implemented |
 | MP-053 | Every active market is represented in the dynamic sitemap | VERIFIED | canonical market URLs are emitted from the current normalized discovery set with hourly change frequency |
