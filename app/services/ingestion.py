@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from dataclasses import dataclass
 from typing import Awaitable, Callable, Protocol
 
 from app.config.runtime import RuntimeFlags
 from app.domain.markets import NormalizedMarket
 from app.services.intelligence import MarketSignal, signal, snapshot
-from app.services.retry import RetryPolicy, with_retry
+from app.services.retry import RetryPolicy, is_transient_http_error, with_retry
 from app.storage.snapshots import SnapshotStore
+
+
+logger = logging.getLogger("marketpulse.ingestion")
 
 
 class MarketFetcher(Protocol):
@@ -51,7 +55,7 @@ class IngestionWorker:
         async def operation() -> object:
             return await fetcher.fetch_markets(limit=self.limit_per_venue)
 
-        result = await with_retry(operation, self.retry_policy)
+        result = await with_retry(operation, self.retry_policy, should_retry=is_transient_http_error)
         if isinstance(result, tuple):
             result = result[0]
         if not isinstance(result, list):
@@ -65,15 +69,30 @@ class IngestionWorker:
             try:
                 markets.extend(await self._fetch(venue, fetcher))
             except Exception as exc:
-                errors.append(f"{venue}:{type(exc).__name__}")
+                error = f"{venue}:{type(exc).__name__}"
+                errors.append(error)
+                logger.warning("venue refresh failed: %s", error)
 
+        processed: list[NormalizedMarket] = []
         signals: list[MarketSignal] = []
         for market in markets:
-            current = snapshot(market)
-            previous = self.store.previous(current.canonical_id, current.observed_at.isoformat())
-            self.store.append(current)
-            signals.append(signal(current, previous))
-        return RefreshBatch(tuple(markets), tuple(signals), tuple(errors))
+            try:
+                current = snapshot(market)
+                previous = self.store.previous(current.canonical_id, current.observed_at.isoformat())
+                self.store.append(current)
+                signals.append(signal(current, previous))
+                processed.append(market)
+            except Exception as exc:
+                error = f"storage:{type(exc).__name__}"
+                errors.append(error)
+                logger.exception("market snapshot failed for %s", market.canonical_id)
+        logger.info(
+            "refresh complete markets=%d errors=%d venues_enabled=%s",
+            len(processed),
+            len(errors),
+            ",".join(venue for venue in ("kalshi", "polymarket") if self.flags.venue_enabled(venue)),
+        )
+        return RefreshBatch(tuple(processed), tuple(signals), tuple(errors))
 
     async def run_forever(
         self,
