@@ -63,3 +63,18 @@ Verified at 2026-08-22T03:37Z on application version `0.5.0`.
 - invalid freshness thresholds fail closed during configuration
 
 The interface does not claim live data. It reports only the freshness state supported by the latest successful refresh timestamp.
+
+
+## SEO evidence
+
+Verified at 2026-08-22T03:42Z on application version `0.6.0`.
+
+- canonical URL matches the configured HTTPS production origin
+- Open Graph URL and metadata are rendered
+- WebSite JSON-LD is rendered
+- `/sitemap.xml` returns valid XML with the canonical home URL
+- `/robots.txt` returns three real lines: user agent, allow rule, and sitemap URL
+- the public origin validator rejects HTTP, credentials, paths, queries, and fragments
+- CI regression tests and full-history secret scanning pass
+
+A live validation initially detected literal newline escapes in `robots.txt`; PR #26 corrected the response and strengthened the exact-line test before MP-015 was marked verified.
