@@ -7,7 +7,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 _SLUG = re.compile(r"^[a-z0-9][a-z0-9-]{2,79}$")
-_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{1,99}$")\n_CHANNEL = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$")
+_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{1,99}$")
+_CHANNEL = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$")
 
 
 @dataclass(frozen=True)
