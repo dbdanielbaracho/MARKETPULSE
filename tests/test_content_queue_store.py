@@ -206,6 +206,41 @@ def test_draft_rejects_unknown_citation_and_wrong_state(tmp_path):
         store.save_draft(claimed.candidate_id, valid, NOW)
 
 
+
+def test_draft_review_is_listed_guarded_and_audited(tmp_path):
+    store = ContentQueueStore(tmp_path / "queue.db")
+    bundle = evidence_bundle()
+    store.enqueue(candidate(), bundle, NOW)
+    claimed = store.claim_next(NOW)
+    stored = store.save_draft(
+        claimed.candidate_id,
+        ContentDraft(
+            headline="Review me",
+            body="Grounded draft.",
+            citation_ids=tuple(item.evidence_id for item in bundle.items),
+        ),
+        NOW,
+    )
+
+    pending = store.drafts("pending_review")
+    assert [item.draft_id for item in pending] == [stored.draft_id]
+
+    approved = store.review_draft(stored.draft_id, "approved", "editor_verified_sources", NOW)
+    assert approved.state == "approved"
+    assert store.drafts("pending_review") == []
+    assert store.draft_audit(stored.draft_id) == [
+        (None, "pending_review", "draft_created"),
+        ("pending_review", "approved", "editor_verified_sources"),
+    ]
+
+    with pytest.raises(ValueError, match="not pending"):
+        store.review_draft(stored.draft_id, "rejected", "second_decision", NOW)
+    with pytest.raises(ValueError, match="reason"):
+        store.review_draft("missing", "approved", "", NOW)
+    with pytest.raises(ValueError, match="invalid draft state"):
+        store.drafts("published")
+
+
 def test_drafts_created_since_supports_daily_limit(tmp_path):
     store = ContentQueueStore(tmp_path / "queue.db")
     bundle = evidence_bundle()
