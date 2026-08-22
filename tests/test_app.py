@@ -28,3 +28,27 @@ def test_home_has_accessible_discovery_controls():
     assert 'href="#main"' in response.text
     assert 'type="search"' in response.text
     assert 'aria-live="polite"' in response.text
+
+
+def test_seo_endpoints_and_canonical_are_consistent():
+    home = client.get("/")
+    robots = client.get("/robots.txt")
+    sitemap = client.get("/sitemap.xml")
+
+    assert home.status_code == 200
+    assert 'rel="canonical"' in home.text
+    assert 'application/ld+json' in home.text
+    assert 'property="og:url"' in home.text
+    assert robots.status_code == 200
+    assert "Sitemap: https://marketpulse-production-aa9f.up.railway.app/sitemap.xml" in robots.text
+    assert sitemap.status_code == 200
+    assert "<loc>https://marketpulse-production-aa9f.up.railway.app/</loc>" in sitemap.text
+
+
+def test_public_base_url_must_be_origin_only_https(monkeypatch):
+    import pytest
+    import app.main as main
+
+    monkeypatch.setenv("MP_PUBLIC_BASE_URL", "http://example.com/path?unsafe=1")
+    with pytest.raises(ValueError):
+        main._public_base_url()
