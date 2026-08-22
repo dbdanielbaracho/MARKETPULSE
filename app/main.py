@@ -34,7 +34,7 @@ from app.storage.content_queue import ContentQueueStore, PersistenceProbe
 from app.storage.revenue import RevenueStore
 from app.storage.snapshots import SnapshotStore
 
-APP_VERSION = "0.30.0"
+APP_VERSION = "0.31.0"
 
 
 class DiscoveryMarket(BaseModel):
@@ -76,6 +76,19 @@ class MarketComparison(BaseModel):
     equivalent_contracts: bool
     reasons: list[str]
     warning: str
+
+
+class SnapshotPoint(BaseModel):
+    probability: float | None
+    volume_usd: float | None
+    observed_at: datetime
+
+
+class MarketSignalResponse(BaseModel):
+    market_id: str
+    label: Literal["rising_fast", "falling_fast", "high_attention", "watching", "insufficient_data"]
+    reasons: list[str]
+    generated_at: datetime
 
 
 class DraftReviewRequest(BaseModel):
@@ -941,6 +954,88 @@ def _market_by_id(market_id: str) -> DiscoveryMarket:
 @app.get("/api/v1/market", response_model=DiscoveryMarket)
 def market_detail(market_id: str = Query(min_length=1, max_length=200)) -> DiscoveryMarket:
     return _market_by_id(market_id)
+
+
+@app.get("/api/v1/market/history", response_model=list[SnapshotPoint])
+def market_history(
+    market_id: str = Query(min_length=1, max_length=200),
+    hours: int = Query(default=168, ge=1, le=8760),
+) -> list[SnapshotPoint]:
+    _market_by_id(market_id)
+    return [
+        SnapshotPoint(probability=item.probability, volume_usd=item.volume_usd, observed_at=item.observed_at)
+        for item in SnapshotStore(_database_path()).history(market_id, hours=hours)
+    ]
+
+
+@app.get("/api/v1/market/signal", response_model=MarketSignalResponse)
+def market_signal(market_id: str = Query(min_length=1, max_length=200)) -> MarketSignalResponse:
+    market = _market_by_id(market_id)
+    reasons: list[str] = []
+    change = market.probability_change
+    if change is not None and abs(change) >= .10:
+        reasons.append(f"Probability moved {abs(change) * 100:.1f} points in the latest comparison window.")
+        label = "rising_fast" if change > 0 else "falling_fast"
+    elif market.trend_score >= 75:
+        reasons.append(f"PrediBeacon Trend Score is {market.trend_score:.0f}/100.")
+        label = "high_attention"
+    elif change is None:
+        reasons.append("A reliable recent probability comparison is not available yet.")
+        label = "insufficient_data"
+    else:
+        reasons.append(f"Recent probability movement is {abs(change) * 100:.1f} points.")
+        label = "watching"
+    if market.volume_usd is not None:
+        reasons.append(f"Reported venue volume is USD {market.volume_usd:,.0f}.")
+    if market.closes_at is not None:
+        remaining = (market.closes_at - datetime.now(timezone.utc)).total_seconds()
+        if 0 < remaining <= 72 * 3600:
+            reasons.append("This market is scheduled to close within 72 hours.")
+    return MarketSignalResponse(
+        market_id=market_id,
+        label=label,
+        reasons=reasons,
+        generated_at=datetime.now(timezone.utc),
+    )
+
+
+@app.get("/api/v1/market/related", response_model=list[DiscoveryMarket])
+def related_markets(
+    market_id: str = Query(min_length=1, max_length=200),
+    limit: int = Query(default=6, ge=1, le=12),
+) -> list[DiscoveryMarket]:
+    market = _market_by_id(market_id)
+    title_terms = {term for term in market.title.casefold().split() if len(term) >= 5}
+    candidates = []
+    for item in _DISCOVERY:
+        if item.canonical_id == market_id:
+            continue
+        overlap = len(title_terms & set(item.title.casefold().split()))
+        same_category = bool(market.category and item.category == market.category)
+        if overlap or same_category:
+            candidates.append((same_category, overlap, item.trend_score, item))
+    candidates.sort(key=lambda entry: (entry[0], entry[1], entry[2]), reverse=True)
+    return [entry[3] for entry in candidates[:limit]]
+
+
+@app.get("/watchlist", response_class=HTMLResponse)
+def watchlist_page() -> HTMLResponse:
+    nonce = token_urlsafe(18)
+    template = Path(__file__).parent / "templates" / "watchlist.html"
+    body = template.read_text(encoding="utf-8").replace("__CSP_NONCE__", nonce)
+    return HTMLResponse(
+        body,
+        headers={
+            "Cache-Control": "public, max-age=60",
+            "Content-Security-Policy": (
+                "default-src 'none'; "
+                f"script-src 'nonce-{nonce}'; style-src 'nonce-{nonce}'; "
+                "connect-src 'self'; img-src 'none'; font-src 'none'; "
+                "frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+            ),
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 @app.get("/market", response_class=HTMLResponse)
