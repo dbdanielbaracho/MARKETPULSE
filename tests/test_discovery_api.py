@@ -281,7 +281,7 @@ def test_campaign_creator_and_top_journey(tmp_path, monkeypatch):
 
     entry = client.get("/go/daniel-launch-01", follow_redirects=False)
     assert entry.status_code == 302
-    assert "market_id=kalshi%3Acreator" in entry.headers["location"]
+    assert entry.headers["location"].startswith("/markets/creator-selected-market-")
     assert "creator_id=daniel" in entry.headers["location"]
     assert "campaign_id=daniel-launch-01" in entry.headers["location"]
 
