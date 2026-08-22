@@ -698,6 +698,9 @@ async def reconcile_partner_event(
     store = RevenueStore(_database_path())
     try:
         attribution_id = event.attribution_id or store.attribution_id_for_click(event.click_id or "")
+        existing = store.get(attribution_id)
+        if existing.venue != venue:
+            raise ValueError("venue mismatch")
         current = store.transition(
             attribution_id,
             RevenueState(event.state),
@@ -709,8 +712,6 @@ async def reconcile_partner_event(
         raise HTTPException(status_code=404, detail="attribution not found") from exc
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    if current.venue != venue:
-        raise HTTPException(status_code=409, detail="venue mismatch")
     return {
         "attribution_id": current.attribution_id,
         "click_id": current.click_id,
