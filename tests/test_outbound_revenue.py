@@ -2,6 +2,7 @@ import pytest
 
 from app.domain.revenue import AttributionRecord, RevenueState
 from app.services.outbound import PartnerRoute, resolve_outbound
+from app.storage.attribution import AttributionStore
 
 
 def test_outbound_fails_closed_without_verified_route():
@@ -57,3 +58,18 @@ def test_invalid_revenue_transition_fails_closed():
 def test_duplicate_state_is_idempotent():
     record = AttributionRecord("a1", "c1", "p1", "kalshi", "US")
     assert record.transition(RevenueState.CLICKED) is record
+
+
+def test_partner_event_is_idempotent_across_retries(tmp_path):
+    store = AttributionStore(tmp_path / "marketpulse.db")
+    first = store.record_partner_event("evt-1", "a1", "qualified", '{"source":"partner"}')
+    second = store.record_partner_event("evt-1", "a1", "qualified", '{"source":"partner"}')
+    assert first is True
+    assert second is False
+
+
+def test_partner_event_cannot_be_reused_for_different_attribution(tmp_path):
+    store = AttributionStore(tmp_path / "marketpulse.db")
+    store.record_partner_event("evt-1", "a1", "qualified", '{}')
+    with pytest.raises(ValueError):
+        store.record_partner_event("evt-1", "a2", "qualified", '{}')
