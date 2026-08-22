@@ -47,3 +47,19 @@ Verified at 2026-08-22T03:28Z on application version `0.4.0`.
 - Automated tests also prove that identical titles with different deadlines are `not_equivalent`, while identical titles without sufficient rule evidence return `insufficient_evidence`.
 
 The system therefore fails closed: title similarity alone cannot establish contract equivalence.
+
+
+## Freshness evidence
+
+Verified at 2026-08-22T03:37Z on application version `0.5.0`.
+
+- `freshness: fresh`
+- measured `data_age_seconds`
+- configured `stale_after_seconds: 900`
+- `last_refresh_errors: null`
+- venue counts: 100 Kalshi and 100 Polymarket
+- public page contains the accessible freshness status component
+- automated tests cover `fresh`, `stale`, `future`, and `unavailable`
+- invalid freshness thresholds fail closed during configuration
+
+The interface does not claim live data. It reports only the freshness state supported by the latest successful refresh timestamp.

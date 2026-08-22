@@ -29,7 +29,7 @@ This registry is the scope-control source of truth. A requirement may not disapp
 | MP-023 | Revenue dashboard; no unnecessary user-funds accounting | REQUIRED | dashboard/reconciliation |
 | MP-024 | Mobile-first, simple, accessible website | IN_PROGRESS | dynamic baseline UI; usability/accessibility audit pending |
 | MP-025 | Search and category discovery | VERIFIED | deployed API/UI filters with production evidence in `docs/LIVE_EVIDENCE.md` |
-| MP-026 | Freshness displayed honestly; never claim live without evidence | IN_PROGRESS | explicit fresh/stale/future/unavailable API and UI; CI/live evidence pending |
+| MP-026 | Freshness displayed honestly; never claim live without evidence | VERIFIED | bounded freshness states, UI banner, tests and live Railway evidence |
 | MP-027 | GitHub PR + CI gates | VERIFIED | repository workflow |
 | MP-028 | Railway staging with deterministic healthcheck | VERIFIED | Docker deployment + /health |
 | MP-029 | Secrets never committed | VERIFIED | pinned Gitleaks CI gate scans full Git history on pushes and PRs |
