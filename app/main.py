@@ -30,12 +30,13 @@ from app.services.content_drafts import generate_evidence_brief
 from app.services.ingestion import IngestionWorker, RefreshBatch
 from app.services.matching import MarketContractFacts, decide_match
 from app.services.social_distribution import all_channel_readiness
+from app.storage.api_keys import ApiKeyStore, ApiPrincipal
 from app.storage.campaigns import CampaignLinkStore
 from app.storage.content_queue import ContentQueueStore, PersistenceProbe
 from app.storage.revenue import RevenueStore
 from app.storage.snapshots import SnapshotStore
 
-APP_VERSION = "0.33.0"
+APP_VERSION = "0.34.0"
 
 
 class DiscoveryMarket(BaseModel):
@@ -106,6 +107,31 @@ class CampaignLinkView(BaseModel):
     channel: str
     active: bool
     public_url: str
+
+
+class TimelineEvent(BaseModel):
+    kind: Literal["probability", "venue", "news", "official", "research"]
+    occurred_at: datetime
+    title: str
+    probability: float | None = None
+    volume_usd: float | None = None
+    source_url: str | None = None
+
+
+class ApiKeyCreateRequest(BaseModel):
+    name: str = Field(min_length=2, max_length=100)
+    plan: Literal["starter", "pro", "business"] = "starter"
+    scopes: list[Literal["markets:read", "history:read"]]
+    daily_limit: int = Field(default=1000, ge=1, le=1_000_000)
+
+
+class ApiKeyCreateResponse(BaseModel):
+    key_id: str
+    api_key: str
+    plan: str
+    scopes: list[str]
+    daily_limit: int
+    notice: str
 
 
 class DraftReviewRequest(BaseModel):
@@ -311,6 +337,27 @@ def _require_admin(
         raise HTTPException(status_code=503, detail="admin review is not configured")
     if token is None or not compare_digest(token, expected):
         raise HTTPException(status_code=401, detail="invalid admin credentials")
+
+
+def _commercial_principal(token: str | None, scope: str) -> ApiPrincipal:
+    try:
+        return ApiKeyStore(_database_path()).authorize(token or "", scope)
+    except PermissionError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+    except OverflowError as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
+
+
+def _commercial_markets_key(
+    token: Annotated[str | None, Header(alias="X-PrediBeacon-API-Key")] = None,
+) -> ApiPrincipal:
+    return _commercial_principal(token, "markets:read")
+
+
+def _commercial_history_key(
+    token: Annotated[str | None, Header(alias="X-PrediBeacon-API-Key")] = None,
+) -> ApiPrincipal:
+    return _commercial_principal(token, "history:read")
 
 
 def _evidence_refresh_interval() -> float:
@@ -903,6 +950,54 @@ def markets(
     return balanced[:limit]
 
 
+@app.get("/api/v1/commercial/markets", response_model=list[DiscoveryMarket])
+def commercial_markets(
+    sort: Literal["trending", "movers", "volume"] = "trending",
+    category: str | None = None,
+    venue: Literal["kalshi", "polymarket"] | None = None,
+    q: str | None = Query(default=None, max_length=120),
+    limit: int = Query(default=100, ge=1, le=100),
+    principal: ApiPrincipal = Depends(_commercial_markets_key),
+) -> list[DiscoveryMarket]:
+    return markets(sort=sort, category=category, venue=venue, q=q, limit=limit)
+
+
+@app.get("/api/v1/commercial/history", response_model=list[SnapshotPoint])
+def commercial_history(
+    market_id: str = Query(min_length=1, max_length=200),
+    hours: int = Query(default=168, ge=1, le=8760),
+    principal: ApiPrincipal = Depends(_commercial_history_key),
+) -> list[SnapshotPoint]:
+    return market_history(market_id=market_id, hours=hours)
+
+
+@app.get("/api/v1/market/timeline", response_model=list[TimelineEvent])
+def market_timeline(
+    market_id: str = Query(min_length=1, max_length=200),
+    hours: int = Query(default=168, ge=1, le=8760),
+) -> list[TimelineEvent]:
+    market = _market_by_id(market_id)
+    events = [
+        TimelineEvent(
+            kind="probability",
+            occurred_at=item.observed_at,
+            title="Recorded market probability",
+            probability=item.probability,
+            volume_usd=item.volume_usd,
+        )
+        for item in SnapshotStore(_database_path()).history(market_id, hours=hours, limit=100)
+    ]
+    for item in _evidence_bundle(market).items:
+        events.append(TimelineEvent(
+            kind=item.kind.value,
+            occurred_at=item.published_at or item.retrieved_at,
+            title=item.title,
+            source_url=str(item.url),
+        ))
+    events.sort(key=lambda item: item.occurred_at, reverse=True)
+    return events[:150]
+
+
 @app.get("/api/v1/evidence", response_model=MarketEvidenceResponse)
 def market_evidence(
     market_id: str = Query(min_length=1, max_length=200),
@@ -971,6 +1066,32 @@ def _market_by_id(market_id: str) -> DiscoveryMarket:
 @app.get("/api/v1/market", response_model=DiscoveryMarket)
 def market_detail(market_id: str = Query(min_length=1, max_length=200)) -> DiscoveryMarket:
     return _market_by_id(market_id)
+
+
+@app.post(
+    "/api/v1/admin/api-keys",
+    response_model=ApiKeyCreateResponse,
+    dependencies=[Depends(_require_admin)],
+)
+def create_commercial_api_key(payload: ApiKeyCreateRequest) -> ApiKeyCreateResponse:
+    key_id = str(uuid4())
+    raw_token = f"pb_live_{token_urlsafe(32)}"
+    ApiKeyStore(_database_path()).create(
+        key_id=key_id,
+        raw_token=raw_token,
+        name=payload.name,
+        plan=payload.plan,
+        scopes=tuple(payload.scopes),
+        daily_limit=payload.daily_limit,
+    )
+    return ApiKeyCreateResponse(
+        key_id=key_id,
+        api_key=raw_token,
+        plan=payload.plan,
+        scopes=list(payload.scopes),
+        daily_limit=payload.daily_limit,
+        notice="Store this key now. PrediBeacon retains only its SHA-256 hash.",
+    )
 
 
 @app.post(
