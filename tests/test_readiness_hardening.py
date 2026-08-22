@@ -33,7 +33,7 @@ def test_related_markets_never_claim_contract_equivalence():
         _market("c", "Will a spacecraft land on Mars in 2027?", "science", "kalshi"),
     ])
     try:
-        results = related_markets("a")
+        results = related_markets("a", limit=6)
         assert results
         assert all(item.equivalent_contracts is False for item in results)
         assert all(item.relationship in {"related", "insufficient_evidence"} for item in results)
