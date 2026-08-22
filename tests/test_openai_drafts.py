@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
@@ -29,8 +30,7 @@ def evidence():
     )
 
 
-@pytest.mark.asyncio
-async def test_openai_draft_uses_structured_output_and_locked_citations():
+def test_openai_draft_uses_structured_output_and_locked_citations():
     item = evidence()
     responses = FakeResponses(AIDraftOutput(
         headline="Will rates fall?",
@@ -43,7 +43,7 @@ async def test_openai_draft_uses_structured_output_and_locked_citations():
         responses_client=responses,
     )
 
-    draft = await provider.generate(market_id="kalshi:rates", evidence=(item,))
+    draft = asyncio.run(provider.generate(market_id="kalshi:rates", evidence=(item,)))
 
     assert draft.generator == "openai:gpt-test"
     assert draft.citation_ids == (item.evidence_id,)
@@ -52,8 +52,7 @@ async def test_openai_draft_uses_structured_output_and_locked_citations():
     assert "untrusted data" in responses.kwargs["input"][0]["content"]
 
 
-@pytest.mark.asyncio
-async def test_openai_draft_fails_closed_on_unknown_citation():
+def test_openai_draft_fails_closed_on_unknown_citation():
     item = evidence()
     responses = FakeResponses(AIDraftOutput(
         headline="Unsafe",
@@ -63,19 +62,18 @@ async def test_openai_draft_fails_closed_on_unknown_citation():
     provider = OpenAIDraftProvider(api_key="test-key", responses_client=responses)
 
     with pytest.raises(ValueError, match="outside"):
-        await provider.generate(market_id="kalshi:rates", evidence=(item,))
+        asyncio.run(provider.generate(market_id="kalshi:rates", evidence=(item,)))
 
 
-@pytest.mark.asyncio
-async def test_openai_draft_fails_closed_on_refusal_or_empty_evidence():
+def test_openai_draft_fails_closed_on_refusal_or_empty_evidence():
     provider = OpenAIDraftProvider(
         api_key="test-key",
         responses_client=FakeResponses(None),
     )
     with pytest.raises(ValueError, match="refused or incomplete"):
-        await provider.generate(market_id="kalshi:rates", evidence=(evidence(),))
+        asyncio.run(provider.generate(market_id="kalshi:rates", evidence=(evidence(),)))
     with pytest.raises(ValueError, match="requires persisted evidence"):
-        await provider.generate(market_id="kalshi:rates", evidence=())
+        asyncio.run(provider.generate(market_id="kalshi:rates", evidence=()))
 
 
 def test_openai_provider_requires_key():
