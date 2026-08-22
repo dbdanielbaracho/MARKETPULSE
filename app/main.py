@@ -35,7 +35,7 @@ from app.storage.content_queue import ContentQueueStore, PersistenceProbe
 from app.storage.revenue import RevenueStore
 from app.storage.snapshots import SnapshotStore
 
-APP_VERSION = "0.32.0"
+APP_VERSION = "0.33.0"
 
 
 class DiscoveryMarket(BaseModel):
@@ -1091,6 +1091,54 @@ def related_markets(
             candidates.append((same_category, overlap, item.trend_score, item))
     candidates.sort(key=lambda entry: (entry[0], entry[1], entry[2]), reverse=True)
     return [entry[3] for entry in candidates[:limit]]
+
+
+@app.get("/alerts", response_class=HTMLResponse)
+def alerts_page() -> HTMLResponse:
+    nonce = token_urlsafe(18)
+    template = Path(__file__).parent / "templates" / "alerts.html"
+    return HTMLResponse(
+        template.read_text(encoding="utf-8").replace("__CSP_NONCE__", nonce),
+        headers={
+            "Cache-Control": "public, max-age=60",
+            "Content-Security-Policy": (
+                "default-src 'none'; "
+                f"script-src 'nonce-{nonce}'; style-src 'nonce-{nonce}'; "
+                "connect-src 'self'; img-src 'self'; manifest-src 'self'; "
+                "frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+            ),
+        },
+    )
+
+
+@app.get("/embed/market", response_class=HTMLResponse)
+def market_embed() -> HTMLResponse:
+    nonce = token_urlsafe(18)
+    template = Path(__file__).parent / "templates" / "embed.html"
+    return HTMLResponse(
+        template.read_text(encoding="utf-8").replace("__CSP_NONCE__", nonce),
+        headers={
+            "Cache-Control": "public, max-age=60",
+            "Content-Security-Policy": (
+                "default-src 'none'; "
+                f"script-src 'nonce-{nonce}'; style-src 'nonce-{nonce}'; "
+                "connect-src 'self'; frame-ancestors *; base-uri 'none'; form-action 'none'"
+            ),
+            "Referrer-Policy": "strict-origin-when-cross-origin",
+        },
+    )
+
+
+@app.get("/manifest.webmanifest")
+def web_manifest() -> Response:
+    body = (Path(__file__).parent / "static" / "manifest.webmanifest").read_text(encoding="utf-8")
+    return Response(body, media_type="application/manifest+json", headers={"Cache-Control": "public, max-age=3600"})
+
+
+@app.get("/service-worker.js")
+def service_worker() -> Response:
+    body = (Path(__file__).parent / "static" / "service-worker.js").read_text(encoding="utf-8")
+    return Response(body, media_type="application/javascript", headers={"Cache-Control": "no-cache", "Service-Worker-Allowed": "/"})
 
 
 @app.get("/top", response_class=HTMLResponse)
