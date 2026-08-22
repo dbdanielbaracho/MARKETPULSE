@@ -255,3 +255,52 @@ def test_history_signal_related_and_watchlist(tmp_path, monkeypatch):
     assert related.json()[0]["canonical_id"] == "polymarket:related"
     assert watchlist.status_code == 200
     assert "Your watchlist" in watchlist.text
+
+
+def test_campaign_creator_and_top_journey(tmp_path, monkeypatch):
+    monkeypatch.setenv("MP_DATABASE_PATH", str(tmp_path / "campaigns.db"))
+    token = "a" * 40
+    monkeypatch.setenv("MP_ADMIN_TOKEN", token)
+    now = datetime.now(timezone.utc)
+    set_discovery_markets([DiscoveryMarket(
+        canonical_id="kalshi:creator",
+        title="Creator selected market",
+        venue="kalshi",
+        probability=.64,
+        trend_score=84,
+        observed_at=now,
+        source_url="https://kalshi.com/markets/creator",
+    )])
+    created = client.post(
+        "/api/v1/admin/campaign-links",
+        headers={"X-MarketPulse-Admin-Token": token},
+        json={"slug": "daniel-launch-01", "market_id": "kalshi:creator", "creator_id": "daniel", "channel": "tiktok"},
+    )
+    assert created.status_code == 200
+    assert created.json()["public_url"].endswith("/go/daniel-launch-01")
+
+    entry = client.get("/go/daniel-launch-01", follow_redirects=False)
+    assert entry.status_code == 302
+    assert "market_id=kalshi%3Acreator" in entry.headers["location"]
+    assert "creator_id=daniel" in entry.headers["location"]
+    assert "campaign_id=daniel-launch-01" in entry.headers["location"]
+
+    creator = client.get("/api/v1/creators/daniel/markets")
+    assert creator.status_code == 200
+    assert creator.json()[0]["market"]["canonical_id"] == "kalshi:creator"
+    assert "Creator markets" in client.get("/creator/daniel").text
+    assert "Top markets today" in client.get("/top").text
+
+
+def test_campaign_slug_cannot_be_reassigned(tmp_path, monkeypatch):
+    monkeypatch.setenv("MP_DATABASE_PATH", str(tmp_path / "campaigns.db"))
+    token = "b" * 40
+    monkeypatch.setenv("MP_ADMIN_TOKEN", token)
+    now = datetime.now(timezone.utc)
+    set_discovery_markets([
+        DiscoveryMarket(canonical_id="kalshi:a", title="A", venue="kalshi", trend_score=1, observed_at=now),
+        DiscoveryMarket(canonical_id="kalshi:b", title="B", venue="kalshi", trend_score=1, observed_at=now),
+    ])
+    headers = {"X-MarketPulse-Admin-Token": token}
+    assert client.post("/api/v1/admin/campaign-links", headers=headers, json={"slug":"fixed-link","market_id":"kalshi:a","channel":"x"}).status_code == 200
+    assert client.post("/api/v1/admin/campaign-links", headers=headers, json={"slug":"fixed-link","market_id":"kalshi:b","channel":"x"}).status_code == 409
