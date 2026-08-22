@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
+import time
 import html
 import json
 import os
@@ -23,7 +26,7 @@ from app.adapters.openai_drafts import OpenAIDraftProvider
 from app.adapters.polymarket import PolymarketAdapter
 from app.config.runtime import RuntimeFlags
 from app.domain.evidence import EvidenceBundle, EvidenceItem, EvidenceKind
-from app.domain.revenue import AttributionRecord
+from app.domain.revenue import AttributionRecord, RevenueState
 from app.services.content_queue import ContentDecision, ContentPolicy, classify_content_candidate
 from app.services.country_policy import resolve_country_policy
 from app.services.content_drafts import generate_evidence_brief
@@ -36,7 +39,7 @@ from app.storage.content_queue import ContentQueueStore, PersistenceProbe
 from app.storage.revenue import RevenueStore
 from app.storage.snapshots import SnapshotStore
 
-APP_VERSION = "0.34.0"
+APP_VERSION = "0.35.0"
 
 
 class DiscoveryMarket(BaseModel):
@@ -132,6 +135,15 @@ class ApiKeyCreateResponse(BaseModel):
     scopes: list[str]
     daily_limit: int
     notice: str
+
+
+class PartnerRevenueEvent(BaseModel):
+    event_id: str = Field(min_length=3, max_length=200)
+    attribution_id: str | None = Field(default=None, max_length=200)
+    click_id: str | None = Field(default=None, max_length=200)
+    state: Literal["attributed", "qualified", "commission_pending", "approved", "payable", "paid", "rejected", "reversed", "expired", "disputed", "unknown"]
+    commission_amount: float | None = Field(default=None, ge=0)
+    currency: str | None = Field(default=None, min_length=3, max_length=3)
 
 
 class DraftReviewRequest(BaseModel):
@@ -642,6 +654,72 @@ def operations_snapshot() -> dict[str, object]:
 @app.get("/api/v1/admin/revenue", dependencies=[Depends(_require_admin)])
 def revenue_snapshot() -> dict[str, object]:
     return RevenueStore(_database_path()).summary()
+
+
+@app.get(
+    "/api/v1/admin/creators/{creator_id}/revenue",
+    dependencies=[Depends(_require_admin)],
+)
+def creator_revenue_snapshot(creator_id: str) -> dict[str, object]:
+    return RevenueStore(_database_path()).creator_summary(creator_id)
+
+
+@app.post("/api/v1/partners/{venue}/events")
+async def reconcile_partner_event(
+    venue: Literal["kalshi", "polymarket"],
+    request: Request,
+    timestamp: Annotated[str | None, Header(alias="X-PrediBeacon-Partner-Timestamp")] = None,
+    signature: Annotated[str | None, Header(alias="X-PrediBeacon-Partner-Signature")] = None,
+) -> dict[str, object]:
+    secret = os.getenv(f"MP_{venue.upper()}_WEBHOOK_SECRET", "").strip()
+    if len(secret) < 32:
+        raise HTTPException(status_code=503, detail="partner reconciliation is not configured")
+    try:
+        timestamp_value = int(timestamp or "")
+    except ValueError as exc:
+        raise HTTPException(status_code=401, detail="invalid partner timestamp") from exc
+    if abs(int(time.time()) - timestamp_value) > 300:
+        raise HTTPException(status_code=401, detail="stale partner event")
+    body = await request.body()
+    expected = hmac.new(
+        secret.encode("utf-8"),
+        (str(timestamp_value) + ".").encode("utf-8") + body,
+        hashlib.sha256,
+    ).hexdigest()
+    provided = (signature or "").removeprefix("sha256=")
+    if not provided or not compare_digest(provided, expected):
+        raise HTTPException(status_code=401, detail="invalid partner signature")
+    try:
+        event = PartnerRevenueEvent.model_validate_json(body)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="invalid partner event") from exc
+    if bool(event.attribution_id) == bool(event.click_id):
+        raise HTTPException(status_code=422, detail="provide exactly one attribution_id or click_id")
+    store = RevenueStore(_database_path())
+    try:
+        attribution_id = event.attribution_id or store.attribution_id_for_click(event.click_id or "")
+        current = store.transition(
+            attribution_id,
+            RevenueState(event.state),
+            commission_amount=event.commission_amount,
+            currency=event.currency,
+            partner_event_id=f"{venue}:{event.event_id}",
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="attribution not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if current.venue != venue:
+        raise HTTPException(status_code=409, detail="venue mismatch")
+    return {
+        "attribution_id": current.attribution_id,
+        "click_id": current.click_id,
+        "venue": current.venue,
+        "state": current.state.value,
+        "commission_amount": current.commission_amount,
+        "currency": current.currency,
+        "partner_event_id": current.partner_event_id,
+    }
 
 
 @app.get("/api/v1/policy")
