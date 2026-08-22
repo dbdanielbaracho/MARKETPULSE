@@ -23,10 +23,10 @@ from app.domain.evidence import EvidenceBundle, EvidenceItem, EvidenceKind
 from app.services.content_queue import ContentDecision, ContentPolicy, classify_content_candidate
 from app.services.ingestion import IngestionWorker, RefreshBatch
 from app.services.matching import MarketContractFacts, decide_match
-from app.storage.content_queue import ContentQueueStore
+from app.storage.content_queue import ContentQueueStore, PersistenceProbe
 from app.storage.snapshots import SnapshotStore
 
-APP_VERSION = "0.10.0"
+APP_VERSION = "0.11.0"
 
 
 class DiscoveryMarket(BaseModel):
@@ -77,6 +77,8 @@ _EXTERNAL_EVIDENCE: dict[str, list[EvidenceItem]] = {}
 _LAST_EVIDENCE_REFRESH_AT: datetime | None = None
 _LAST_EVIDENCE_ERRORS: tuple[str, ...] = ()
 _CONTENT_QUEUE_COUNTS: dict[str, int] = {}
+_STORAGE_PROBE: PersistenceProbe | None = None
+_PERSISTENT_STORAGE_CONFIGURED = False
 
 
 def _evidence_bundle(market: DiscoveryMarket) -> EvidenceBundle:
@@ -234,10 +236,14 @@ def freshness(now: datetime | None = None) -> tuple[str, float | None]:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    global _CONTENT_QUEUE_COUNTS, _STORAGE_PROBE, _PERSISTENT_STORAGE_CONFIGURED
     flags = RuntimeFlags.from_env()
     database_path = os.getenv("MP_DATABASE_PATH", "/tmp/marketpulse.db")
     store = SnapshotStore(database_path)
     content_queue = ContentQueueStore(database_path)
+    _STORAGE_PROBE = content_queue.record_startup()
+    _CONTENT_QUEUE_COUNTS = content_queue.counts()
+    _PERSISTENT_STORAGE_CONFIGURED = Path(database_path).parent == Path("/data")
     worker = IngestionWorker(
         store=store,
         flags=flags,
@@ -312,6 +318,14 @@ def status() -> dict[str, object]:
         "external_evidence_market_count": len(_EXTERNAL_EVIDENCE),
         "content_candidates_enabled": _content_candidates_enabled(),
         "content_queue_counts": _CONTENT_QUEUE_COUNTS,
+        "storage": {
+            "writable": _STORAGE_PROBE is not None,
+            "persistent_volume_configured": _PERSISTENT_STORAGE_CONFIGURED,
+            "identity": _STORAGE_PROBE.identity if _STORAGE_PROBE else None,
+            "startup_count": _STORAGE_PROBE.startup_count if _STORAGE_PROBE else None,
+            "first_started_at": _STORAGE_PROBE.first_started_at.isoformat() if _STORAGE_PROBE else None,
+            "last_started_at": _STORAGE_PROBE.last_started_at.isoformat() if _STORAGE_PROBE else None,
+        },
         "automated_publishing_enabled": RuntimeFlags.from_env().automated_publishing,
     }
 
