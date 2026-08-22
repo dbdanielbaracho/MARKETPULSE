@@ -9,6 +9,7 @@ from secrets import token_hex
 from pathlib import Path
 from typing import Literal
 
+from app.domain.evidence import EvidenceBundle, EvidenceItem, EvidenceKind
 from app.services.content_queue import ContentCandidate, ContentDecision
 
 CandidateState = Literal["queued", "claimed", "completed", "failed", "rejected"]
@@ -76,6 +77,21 @@ class ContentQueueStore:
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS content_candidate_evidence (
+                    candidate_id TEXT NOT NULL,
+                    evidence_id TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    url TEXT NOT NULL,
+                    publisher TEXT NOT NULL,
+                    kind TEXT NOT NULL CHECK(kind IN ('venue', 'news', 'official', 'research')),
+                    published_at TEXT,
+                    retrieved_at TEXT NOT NULL,
+                    summary TEXT,
+                    PRIMARY KEY(candidate_id, evidence_id),
+                    FOREIGN KEY(candidate_id) REFERENCES content_candidates(candidate_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_content_evidence_candidate
+                    ON content_candidate_evidence(candidate_id);
                 CREATE INDEX IF NOT EXISTS idx_content_candidate_state
                     ON content_candidates(state, created_at);
                 CREATE TABLE IF NOT EXISTS content_candidate_audit (
@@ -134,12 +150,26 @@ class ContentQueueStore:
         key = sha256(raw.encode()).hexdigest()
         return f"cc_{key[:20]}", key
 
-    def enqueue(self, candidate: ContentCandidate, now: datetime | None = None) -> bool:
+    def enqueue(
+        self,
+        candidate: ContentCandidate,
+        evidence_bundle: EvidenceBundle,
+        now: datetime | None = None,
+    ) -> bool:
         if candidate.decision == ContentDecision.REJECT:
             return False
+        if evidence_bundle.market_id != candidate.market_id:
+            raise ValueError("evidence bundle market does not match candidate")
+        bundle = evidence_bundle.deduplicated()
+        by_id = {item.evidence_id: item for item in bundle.items}
+        evidence_ids = tuple(sorted(set(candidate.evidence_ids)))
+        missing = [identifier for identifier in evidence_ids if identifier not in by_id]
+        if missing:
+            raise ValueError(f"candidate evidence snapshot is incomplete: {missing}")
+
         candidate_id, key = self._identity(candidate)
         timestamp = (now or datetime.now(timezone.utc)).isoformat()
-        evidence = json.dumps(sorted(set(candidate.evidence_ids)), separators=(",", ":"))
+        evidence = json.dumps(evidence_ids, separators=(",", ":"))
         with self._connect() as connection:
             cursor = connection.execute(
                 """INSERT OR IGNORE INTO content_candidates(
@@ -152,6 +182,20 @@ class ContentQueueStore:
                 ),
             )
             if cursor.rowcount:
+                for evidence_id in evidence_ids:
+                    item = by_id[evidence_id]
+                    connection.execute(
+                        """INSERT INTO content_candidate_evidence(
+                               candidate_id, evidence_id, title, url, publisher, kind,
+                               published_at, retrieved_at, summary
+                           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        (
+                            candidate_id, evidence_id, item.title, str(item.url),
+                            item.publisher, item.kind.value,
+                            item.published_at.isoformat() if item.published_at else None,
+                            item.retrieved_at.isoformat(), item.summary,
+                        ),
+                    )
                 connection.execute(
                     """INSERT INTO content_candidate_audit(
                            candidate_id, from_state, to_state, reason, occurred_at
@@ -219,3 +263,24 @@ class ContentQueueStore:
                    FROM content_candidate_audit WHERE candidate_id = ? ORDER BY id""",
                 (candidate_id,),
             ).fetchall()
+
+    def evidence(self, candidate_id: str) -> tuple[EvidenceItem, ...]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """SELECT title, url, publisher, kind, published_at, retrieved_at, summary
+                   FROM content_candidate_evidence
+                   WHERE candidate_id = ? ORDER BY evidence_id""",
+                (candidate_id,),
+            ).fetchall()
+        return tuple(
+            EvidenceItem(
+                title=row[0],
+                url=row[1],
+                publisher=row[2],
+                kind=EvidenceKind(row[3]),
+                published_at=datetime.fromisoformat(row[4]) if row[4] else None,
+                retrieved_at=datetime.fromisoformat(row[5]),
+                summary=row[6],
+            )
+            for row in rows
+        )
