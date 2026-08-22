@@ -4,6 +4,7 @@ import pytest
 
 from app.domain.evidence import EvidenceBundle, EvidenceItem, EvidenceKind
 from app.services.content_queue import ContentCandidate, ContentDecision
+from app.services.content_drafts import ContentDraft
 from app.storage.content_queue import ContentQueueStore
 
 NOW = datetime(2026, 8, 22, tzinfo=timezone.utc)
@@ -154,3 +155,52 @@ def test_incomplete_or_wrong_market_evidence_fails_closed(tmp_path):
     wrong_market = evidence_bundle().model_copy(update={"market_id": "other"})
     with pytest.raises(ValueError, match="does not match"):
         store.enqueue(candidate(), wrong_market, NOW)
+
+
+def test_claim_and_save_draft_are_atomic_and_audited(tmp_path):
+    store = ContentQueueStore(tmp_path / "queue.db")
+    bundle = evidence_bundle()
+    store.enqueue(candidate(), bundle, NOW)
+
+    claimed = store.claim_next(NOW)
+    assert claimed is not None
+    assert claimed.state == "claimed"
+    assert store.claim_next(NOW) is None
+
+    draft = ContentDraft(
+        headline="Evidence brief",
+        body="Grounded only in persisted evidence.",
+        citation_ids=tuple(item.evidence_id for item in bundle.items),
+    )
+    stored = store.save_draft(claimed.candidate_id, draft, NOW)
+
+    assert stored.state == "pending_review"
+    assert store.get(claimed.candidate_id).state == "completed"
+    assert store.draft_counts()["pending_review"] == 1
+    assert store.audit(claimed.candidate_id)[-2:] == [
+        ("queued", "claimed", "draft_worker_claimed"),
+        ("claimed", "completed", "evidence_draft_created"),
+    ]
+
+
+def test_draft_rejects_unknown_citation_and_wrong_state(tmp_path):
+    store = ContentQueueStore(tmp_path / "queue.db")
+    store.enqueue(candidate(), evidence_bundle(), NOW)
+    claimed = store.claim_next(NOW)
+
+    unknown = ContentDraft(
+        headline="Unsafe",
+        body="Unsafe",
+        citation_ids=("ev_not_persisted",),
+    )
+    with pytest.raises(ValueError, match="persisted evidence"):
+        store.save_draft(claimed.candidate_id, unknown, NOW)
+
+    valid = ContentDraft(
+        headline="Safe",
+        body="Safe",
+        citation_ids=(evidence_bundle().items[0].evidence_id,),
+    )
+    store.save_draft(claimed.candidate_id, valid, NOW)
+    with pytest.raises(ValueError, match="must be claimed"):
+        store.save_draft(claimed.candidate_id, valid, NOW)

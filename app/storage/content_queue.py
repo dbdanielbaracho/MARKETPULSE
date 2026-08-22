@@ -11,6 +11,7 @@ from typing import Literal
 
 from app.domain.evidence import EvidenceBundle, EvidenceItem, EvidenceKind
 from app.services.content_queue import ContentCandidate, ContentDecision
+from app.services.content_drafts import ContentDraft
 
 CandidateState = Literal["queued", "claimed", "completed", "failed", "rejected"]
 _ALLOWED_TRANSITIONS: dict[str, set[str]] = {
@@ -28,6 +29,18 @@ class PersistenceProbe:
     startup_count: int
     first_started_at: datetime
     last_started_at: datetime
+
+
+@dataclass(frozen=True)
+class StoredDraft:
+    draft_id: str
+    candidate_id: str
+    headline: str
+    body: str
+    citation_ids: tuple[str, ...]
+    generator: str
+    state: str
+    created_at: datetime
 
 
 @dataclass(frozen=True)
@@ -92,6 +105,19 @@ class ContentQueueStore:
                 );
                 CREATE INDEX IF NOT EXISTS idx_content_evidence_candidate
                     ON content_candidate_evidence(candidate_id);
+                CREATE TABLE IF NOT EXISTS content_drafts (
+                    draft_id TEXT PRIMARY KEY,
+                    candidate_id TEXT NOT NULL UNIQUE,
+                    headline TEXT NOT NULL,
+                    body TEXT NOT NULL,
+                    citation_ids TEXT NOT NULL,
+                    generator TEXT NOT NULL,
+                    state TEXT NOT NULL CHECK(state IN ('pending_review', 'approved', 'rejected')),
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY(candidate_id) REFERENCES content_candidates(candidate_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_content_draft_state
+                    ON content_drafts(state, created_at);
                 CREATE INDEX IF NOT EXISTS idx_content_candidate_state
                     ON content_candidates(state, created_at);
                 CREATE TABLE IF NOT EXISTS content_candidate_audit (
@@ -284,3 +310,96 @@ class ContentQueueStore:
             )
             for row in rows
         )
+
+    def claim_next(self, now: datetime | None = None) -> StoredCandidate | None:
+        timestamp = (now or datetime.now(timezone.utc)).isoformat()
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                """SELECT candidate_id FROM content_candidates
+                   WHERE state = 'queued' ORDER BY created_at, candidate_id LIMIT 1"""
+            ).fetchone()
+            if row is None:
+                return None
+            candidate_id = row[0]
+            connection.execute(
+                "UPDATE content_candidates SET state = 'claimed', updated_at = ? WHERE candidate_id = ?",
+                (timestamp, candidate_id),
+            )
+            connection.execute(
+                """INSERT INTO content_candidate_audit(
+                       candidate_id, from_state, to_state, reason, occurred_at
+                   ) VALUES (?, 'queued', 'claimed', 'draft_worker_claimed', ?)""",
+                (candidate_id, timestamp),
+            )
+        return self.get(candidate_id)
+
+    def save_draft(
+        self,
+        candidate_id: str,
+        draft: ContentDraft,
+        now: datetime | None = None,
+    ) -> StoredDraft:
+        timestamp = (now or datetime.now(timezone.utc)).isoformat()
+        citations = tuple(dict.fromkeys(draft.citation_ids))
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT state FROM content_candidates WHERE candidate_id = ?",
+                (candidate_id,),
+            ).fetchone()
+            if row is None:
+                raise KeyError(candidate_id)
+            if row[0] != "claimed":
+                raise ValueError(f"candidate must be claimed before drafting: {row[0]}")
+            allowed = {
+                item[0] for item in connection.execute(
+                    "SELECT evidence_id FROM content_candidate_evidence WHERE candidate_id = ?",
+                    (candidate_id,),
+                ).fetchall()
+            }
+            if not citations or any(identifier not in allowed for identifier in citations):
+                raise ValueError("draft citations must reference the persisted evidence snapshot")
+            digest = sha256(
+                json.dumps([candidate_id, draft.generator, citations], separators=(",", ":")).encode()
+            ).hexdigest()
+            draft_id = f"draft_{digest[:20]}"
+            connection.execute(
+                """INSERT INTO content_drafts(
+                       draft_id, candidate_id, headline, body, citation_ids,
+                       generator, state, created_at
+                   ) VALUES (?, ?, ?, ?, ?, ?, 'pending_review', ?)""",
+                (
+                    draft_id, candidate_id, draft.headline, draft.body,
+                    json.dumps(citations, separators=(",", ":")), draft.generator, timestamp,
+                ),
+            )
+            connection.execute(
+                "UPDATE content_candidates SET state = 'completed', updated_at = ? WHERE candidate_id = ?",
+                (timestamp, candidate_id),
+            )
+            connection.execute(
+                """INSERT INTO content_candidate_audit(
+                       candidate_id, from_state, to_state, reason, occurred_at
+                   ) VALUES (?, 'claimed', 'completed', 'evidence_draft_created', ?)""",
+                (candidate_id, timestamp),
+            )
+        return StoredDraft(
+            draft_id=draft_id,
+            candidate_id=candidate_id,
+            headline=draft.headline,
+            body=draft.body,
+            citation_ids=citations,
+            generator=draft.generator,
+            state="pending_review",
+            created_at=datetime.fromisoformat(timestamp),
+        )
+
+    def draft_counts(self) -> dict[str, int]:
+        result = {"pending_review": 0, "approved": 0, "rejected": 0}
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT state, COUNT(*) FROM content_drafts GROUP BY state"
+            ).fetchall()
+        result.update({state: count for state, count in rows})
+        return result

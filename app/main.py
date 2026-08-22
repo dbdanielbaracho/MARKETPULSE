@@ -21,12 +21,13 @@ from app.adapters.polymarket import PolymarketAdapter
 from app.config.runtime import RuntimeFlags
 from app.domain.evidence import EvidenceBundle, EvidenceItem, EvidenceKind
 from app.services.content_queue import ContentDecision, ContentPolicy, classify_content_candidate
+from app.services.content_drafts import generate_evidence_brief
 from app.services.ingestion import IngestionWorker, RefreshBatch
 from app.services.matching import MarketContractFacts, decide_match
 from app.storage.content_queue import ContentQueueStore, PersistenceProbe
 from app.storage.snapshots import SnapshotStore
 
-APP_VERSION = "0.12.0"
+APP_VERSION = "0.13.0"
 
 
 class DiscoveryMarket(BaseModel):
@@ -77,6 +78,7 @@ _EXTERNAL_EVIDENCE: dict[str, list[EvidenceItem]] = {}
 _LAST_EVIDENCE_REFRESH_AT: datetime | None = None
 _LAST_EVIDENCE_ERRORS: tuple[str, ...] = ()
 _CONTENT_QUEUE_COUNTS: dict[str, int] = {}
+_CONTENT_DRAFT_COUNTS: dict[str, int] = {}
 _STORAGE_PROBE: PersistenceProbe | None = None
 _PERSISTENT_STORAGE_CONFIGURED = False
 
@@ -179,6 +181,15 @@ def _content_candidates_enabled() -> bool:
     raise ValueError("MP_CONTENT_CANDIDATES must be boolean")
 
 
+def _content_drafts_enabled() -> bool:
+    value = os.getenv("MP_CONTENT_DRAFTS", "true").strip().casefold()
+    if value in {"1", "true", "yes", "on"}:
+        return True
+    if value in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError("MP_CONTENT_DRAFTS must be boolean")
+
+
 def _evidence_refresh_interval() -> float:
     return _bounded_seconds("MP_EVIDENCE_REFRESH_INTERVAL_SECONDS", 900, 300, 86_400)
 
@@ -216,6 +227,36 @@ async def run_external_evidence_forever(stop: asyncio.Event, queue: ContentQueue
             pass
 
 
+async def run_content_drafts_forever(stop: asyncio.Event, queue: ContentQueueStore) -> None:
+    global _CONTENT_QUEUE_COUNTS, _CONTENT_DRAFT_COUNTS
+    while not stop.is_set():
+        candidate = queue.claim_next()
+        if candidate is None:
+            _CONTENT_QUEUE_COUNTS = queue.counts()
+            _CONTENT_DRAFT_COUNTS = queue.draft_counts()
+            delay = 30
+        else:
+            try:
+                evidence = queue.evidence(candidate.candidate_id)
+                draft = generate_evidence_brief(
+                    market_id=candidate.market_id,
+                    evidence=evidence,
+                )
+                queue.save_draft(candidate.candidate_id, draft)
+            except Exception:
+                current = queue.get(candidate.candidate_id)
+                if current is not None and current.state == "claimed":
+                    queue.transition(candidate.candidate_id, "failed", "draft_generation_failed")
+            _CONTENT_QUEUE_COUNTS = queue.counts()
+            _CONTENT_DRAFT_COUNTS = queue.draft_counts()
+            delay = 0
+        if delay:
+            try:
+                await asyncio.wait_for(stop.wait(), timeout=delay)
+            except TimeoutError:
+                pass
+
+
 def _refresh_interval() -> float:
     return _bounded_seconds("MP_REFRESH_INTERVAL_SECONDS", 300, 30, 86_400)
 
@@ -237,13 +278,14 @@ def freshness(now: datetime | None = None) -> tuple[str, float | None]:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    global _CONTENT_QUEUE_COUNTS, _STORAGE_PROBE, _PERSISTENT_STORAGE_CONFIGURED
+    global _CONTENT_QUEUE_COUNTS, _CONTENT_DRAFT_COUNTS, _STORAGE_PROBE, _PERSISTENT_STORAGE_CONFIGURED
     flags = RuntimeFlags.from_env()
     database_path = os.getenv("MP_DATABASE_PATH", "/tmp/marketpulse.db")
     store = SnapshotStore(database_path)
     content_queue = ContentQueueStore(database_path)
     _STORAGE_PROBE = content_queue.record_startup()
     _CONTENT_QUEUE_COUNTS = content_queue.counts()
+    _CONTENT_DRAFT_COUNTS = content_queue.draft_counts()
     _PERSISTENT_STORAGE_CONFIGURED = Path(database_path).parent == Path("/data")
     worker = IngestionWorker(
         store=store,
@@ -264,6 +306,8 @@ async def lifespan(_: FastAPI):
     ]
     if _official_evidence_enabled():
         tasks.append(asyncio.create_task(run_external_evidence_forever(stop, content_queue), name="marketpulse-external-evidence"))
+    if _content_drafts_enabled():
+        tasks.append(asyncio.create_task(run_content_drafts_forever(stop, content_queue), name="marketpulse-content-drafts"))
     try:
         yield
     finally:
@@ -319,6 +363,8 @@ def status() -> dict[str, object]:
         "external_evidence_market_count": len(_EXTERNAL_EVIDENCE),
         "content_candidates_enabled": _content_candidates_enabled(),
         "content_queue_counts": _CONTENT_QUEUE_COUNTS,
+        "content_drafts_enabled": _content_drafts_enabled(),
+        "content_draft_counts": _CONTENT_DRAFT_COUNTS,
         "storage": {
             "writable": _STORAGE_PROBE is not None,
             "persistent_volume_configured": _PERSISTENT_STORAGE_CONFIGURED,
