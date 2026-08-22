@@ -109,3 +109,24 @@ Verified at 2026-08-22T16:49:59Z on application version `0.16.0`.
 - The first live verification exposed an unsupported reasoning value; PR #44 replaced it with the documented `none` value, passed CI and secret scanning, and the redeploy verified successfully.
 
 This proves provider credentials, model access, fail-closed startup behavior, and volume persistence. It does not complete MP-013: a real AI draft remains blocked until an independent evidence match passes the conservative source-diversity gates.
+
+
+## Evidence coverage and market selection evidence
+
+Verified at 2026-08-22T17:09:59Z on application version `0.19.0`.
+
+- Market ingestion remained healthy with 100 Kalshi and 100 Polymarket markets.
+- Polymarket selection now uses documented descending 24-hour volume ordering; current Fed and geopolitical markets replaced the previous concentration in 2028 nomination contracts.
+- Kalshi selection excludes opaque multivariate combo contracts.
+- Trusted feeds returned 227 parsed items with no source errors:
+  - Federal Reserve: 35
+  - U.S. Securities and Exchange Commission: 50
+  - NPR: 10
+  - BBC News: 82
+  - ABC News: 50
+- Conservative matching associated 15 official items with 3 live Federal Reserve markets.
+- No independent news item passed the final title and semantic overlap gates in this cycle.
+- Content queue and pending-review draft counts remained zero; OpenAI was not called for unsupported content.
+- AI provider verification remained true and automated publishing remained disabled.
+
+This advances MP-012 with reproducible live official matches and source health telemetry. Publisher diversity and the first evidence-diverse AI draft remain pending; the scheduled collector will continue checking automatically.
