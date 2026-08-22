@@ -25,7 +25,7 @@ class OpenAIDraftProvider:
         self,
         *,
         api_key: str,
-        model: str = "gpt-5.6",
+        model: str = "gpt-5.6-luna",
         responses_client: ResponsesClient | None = None,
     ) -> None:
         if not api_key.strip():
@@ -62,6 +62,8 @@ class OpenAIDraftProvider:
         response = await self._responses.parse(
             model=self.model,
             store=False,
+            max_output_tokens=800,
+            reasoning={"effort": "minimal"},
             input=[
                 {
                     "role": "system",

@@ -28,7 +28,7 @@ from app.services.matching import MarketContractFacts, decide_match
 from app.storage.content_queue import ContentQueueStore, PersistenceProbe
 from app.storage.snapshots import SnapshotStore
 
-APP_VERSION = "0.14.0"
+APP_VERSION = "0.15.0"
 
 
 class DiscoveryMarket(BaseModel):
@@ -81,6 +81,8 @@ _LAST_EVIDENCE_ERRORS: tuple[str, ...] = ()
 _CONTENT_QUEUE_COUNTS: dict[str, int] = {}
 _CONTENT_DRAFT_COUNTS: dict[str, int] = {}
 _AI_DRAFTS_ERROR: str | None = None
+_AI_DRAFTS_TODAY = 0
+_AI_DAILY_LIMIT_REACHED = False
 _STORAGE_PROBE: PersistenceProbe | None = None
 _PERSISTENT_STORAGE_CONFIGURED = False
 
@@ -202,9 +204,20 @@ def _ai_drafts_enabled() -> bool:
 
 
 def _ai_model() -> str:
-    value = os.getenv("MP_OPENAI_MODEL", "gpt-5.6").strip()
+    value = os.getenv("MP_OPENAI_MODEL", "gpt-5.6-luna").strip()
     if not value or len(value) > 100:
         raise ValueError("MP_OPENAI_MODEL is invalid")
+    return value
+
+
+def _ai_daily_limit() -> int:
+    raw = os.getenv("MP_AI_DAILY_LIMIT", "100").strip()
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise ValueError("MP_AI_DAILY_LIMIT must be an integer") from exc
+    if value < 1 or value > 1000:
+        raise ValueError("MP_AI_DAILY_LIMIT must be between 1 and 1000")
     return value
 
 
@@ -249,14 +262,22 @@ async def run_content_drafts_forever(
     stop: asyncio.Event,
     queue: ContentQueueStore,
     ai_provider: OpenAIDraftProvider | None = None,
+    ai_daily_limit: int = 100,
 ) -> None:
-    global _CONTENT_QUEUE_COUNTS, _CONTENT_DRAFT_COUNTS
+    global _CONTENT_QUEUE_COUNTS, _CONTENT_DRAFT_COUNTS, _AI_DRAFTS_TODAY, _AI_DAILY_LIMIT_REACHED
     while not stop.is_set():
-        candidate = queue.claim_next()
+        today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        _AI_DRAFTS_TODAY = queue.drafts_created_since(today) if ai_provider is not None else 0
+        _AI_DAILY_LIMIT_REACHED = ai_provider is not None and _AI_DRAFTS_TODAY >= ai_daily_limit
+        if _AI_DAILY_LIMIT_REACHED:
+            candidate = None
+            delay = 60
+        else:
+            candidate = queue.claim_next()
+            delay = 30 if candidate is None else 0
         if candidate is None:
             _CONTENT_QUEUE_COUNTS = queue.counts()
             _CONTENT_DRAFT_COUNTS = queue.draft_counts()
-            delay = 30
         else:
             try:
                 evidence = queue.evidence(candidate.candidate_id)
@@ -306,7 +327,7 @@ def freshness(now: datetime | None = None) -> tuple[str, float | None]:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    global _CONTENT_QUEUE_COUNTS, _CONTENT_DRAFT_COUNTS, _AI_DRAFTS_ERROR, _STORAGE_PROBE, _PERSISTENT_STORAGE_CONFIGURED
+    global _CONTENT_QUEUE_COUNTS, _CONTENT_DRAFT_COUNTS, _AI_DRAFTS_ERROR, _AI_DRAFTS_TODAY, _AI_DAILY_LIMIT_REACHED, _STORAGE_PROBE, _PERSISTENT_STORAGE_CONFIGURED
     flags = RuntimeFlags.from_env()
     database_path = os.getenv("MP_DATABASE_PATH", "/tmp/marketpulse.db")
     store = SnapshotStore(database_path)
@@ -323,6 +344,8 @@ async def lifespan(_: FastAPI):
     )
     ai_provider = None
     _AI_DRAFTS_ERROR = None
+    _AI_DRAFTS_TODAY = 0
+    _AI_DAILY_LIMIT_REACHED = False
     if _ai_drafts_enabled():
         api_key = os.getenv("MP_OPENAI_API_KEY", "").strip()
         if api_key:
@@ -345,7 +368,7 @@ async def lifespan(_: FastAPI):
         tasks.append(asyncio.create_task(run_external_evidence_forever(stop, content_queue), name="marketpulse-external-evidence"))
     if _content_drafts_enabled() and (not _ai_drafts_enabled() or ai_provider is not None):
         tasks.append(asyncio.create_task(
-            run_content_drafts_forever(stop, content_queue, ai_provider),
+            run_content_drafts_forever(stop, content_queue, ai_provider, _ai_daily_limit()),
             name="marketpulse-content-drafts",
         ))
     try:
@@ -411,6 +434,9 @@ def status() -> dict[str, object]:
             "model": _ai_model() if _ai_drafts_enabled() else None,
             "configured": bool(os.getenv("MP_OPENAI_API_KEY", "").strip()),
             "error": _AI_DRAFTS_ERROR,
+            "daily_limit": _ai_daily_limit(),
+            "drafts_today": _AI_DRAFTS_TODAY,
+            "daily_limit_reached": _AI_DAILY_LIMIT_REACHED,
         },
         "storage": {
             "writable": _STORAGE_PROBE is not None,

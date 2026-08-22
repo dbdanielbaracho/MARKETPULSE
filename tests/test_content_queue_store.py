@@ -204,3 +204,24 @@ def test_draft_rejects_unknown_citation_and_wrong_state(tmp_path):
     store.save_draft(claimed.candidate_id, valid, NOW)
     with pytest.raises(ValueError, match="must be claimed"):
         store.save_draft(claimed.candidate_id, valid, NOW)
+
+
+def test_drafts_created_since_supports_daily_limit(tmp_path):
+    store = ContentQueueStore(tmp_path / "queue.db")
+    bundle = evidence_bundle()
+    store.enqueue(candidate(), bundle, NOW)
+    claimed = store.claim_next(NOW)
+    store.save_draft(
+        claimed.candidate_id,
+        ContentDraft(
+            headline="Safe",
+            body="Safe",
+            citation_ids=(bundle.items[0].evidence_id,),
+        ),
+        NOW,
+    )
+
+    assert store.drafts_created_since(datetime(2026, 8, 22, tzinfo=timezone.utc)) == 1
+    assert store.drafts_created_since(datetime(2026, 8, 23, tzinfo=timezone.utc)) == 0
+    with pytest.raises(ValueError, match="timezone-aware"):
+        store.drafts_created_since(datetime(2026, 8, 22))
