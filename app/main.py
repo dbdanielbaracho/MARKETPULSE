@@ -19,7 +19,7 @@ from app.services.ingestion import IngestionWorker, RefreshBatch
 from app.services.matching import MarketContractFacts, decide_match
 from app.storage.snapshots import SnapshotStore
 
-APP_VERSION = "0.4.0"
+APP_VERSION = "0.5.0"
 
 
 class DiscoveryMarket(BaseModel):
@@ -83,15 +83,34 @@ def publish_refresh_batch(batch: RefreshBatch) -> None:
     set_discovery_markets(items)
 
 
-def _refresh_interval() -> float:
-    raw = os.getenv("MP_REFRESH_INTERVAL_SECONDS", "300")
+def _bounded_seconds(name: str, default: float, minimum: float, maximum: float) -> float:
+    raw = os.getenv(name, str(default))
     try:
         value = float(raw)
     except ValueError as exc:
-        raise ValueError("MP_REFRESH_INTERVAL_SECONDS must be numeric") from exc
-    if value < 30 or value > 86_400:
-        raise ValueError("MP_REFRESH_INTERVAL_SECONDS must be between 30 and 86400")
+        raise ValueError(f"{name} must be numeric") from exc
+    if value < minimum or value > maximum:
+        raise ValueError(f"{name} must be between {minimum:g} and {maximum:g}")
     return value
+
+
+def _refresh_interval() -> float:
+    return _bounded_seconds("MP_REFRESH_INTERVAL_SECONDS", 300, 30, 86_400)
+
+
+def _stale_after_seconds() -> float:
+    return _bounded_seconds("MP_STALE_AFTER_SECONDS", 900, 60, 86_400)
+
+
+def freshness(now: datetime | None = None) -> tuple[str, float | None]:
+    if _LAST_REFRESH_AT is None or not _DISCOVERY:
+        return "unavailable", None
+    current = now or datetime.now(timezone.utc)
+    age = (current - _LAST_REFRESH_AT).total_seconds()
+    if age < -5:
+        return "future", age
+    age = max(age, 0.0)
+    return ("stale" if age > _stale_after_seconds() else "fresh"), age
 
 
 @asynccontextmanager
@@ -136,6 +155,7 @@ def health() -> dict[str, str]:
 
 @app.get("/api/v1/status")
 def status() -> dict[str, object]:
+    freshness_state, age_seconds = freshness()
     venue_counts = {
         venue: sum(1 for item in _DISCOVERY if item.venue == venue)
         for venue in ("kalshi", "polymarket")
@@ -147,6 +167,9 @@ def status() -> dict[str, object]:
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "last_refresh_at": _LAST_REFRESH_AT.isoformat() if _LAST_REFRESH_AT else None,
         "last_refresh_errors": ",".join(_LAST_REFRESH_ERRORS) or None,
+        "freshness": freshness_state,
+        "data_age_seconds": round(age_seconds, 3) if age_seconds is not None else None,
+        "stale_after_seconds": _stale_after_seconds(),
         "venue_market_counts": venue_counts,
     }
 
