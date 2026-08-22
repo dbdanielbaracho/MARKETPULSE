@@ -18,7 +18,7 @@ This registry is the scope-control source of truth. A requirement may not disapp
 | MP-012 | News/evidence context engine | IN_PROGRESS | provenance model + canonical URL dedupe + explicit freshness states + source diversity gate; collectors/UI pending |
 | MP-013 | Automated AI content candidates | IN_PROGRESS | evidence-gated candidate classifier with update/create decisions; generation/queue persistence pending |
 | MP-014 | Automated website publishing | REQUIRED | content lifecycle + rollback |
-| MP-015 | SEO automation | REQUIRED | metadata/sitemap/canonical/schema validation |
+| MP-015 | SEO automation | IN_PROGRESS | canonical, Open Graph, JSON-LD, robots and sitemap implemented; CI/live validation pending |
 | MP-016 | Instagram distribution | REQUIRED | provider/policy integration |
 | MP-017 | TikTok distribution | REQUIRED | provider/policy integration |
 | MP-018 | Telegram distribution | REQUIRED | provider integration |
