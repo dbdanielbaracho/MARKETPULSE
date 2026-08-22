@@ -262,7 +262,7 @@ def market_evidence(
     if market.source_url:
         items.append(
             EvidenceItem(
-                title=f"Primary venue contract: {market.title}",
+                title=f"Primary venue contract: {market.title}"[:300].rstrip(),
                 url=market.source_url,
                 publisher=market.venue.capitalize(),
                 kind=EvidenceKind.VENUE,
