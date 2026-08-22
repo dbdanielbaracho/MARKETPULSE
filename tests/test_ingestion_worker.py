@@ -1,4 +1,6 @@
 import asyncio
+
+import pytest
 from datetime import datetime, timedelta, timezone
 
 from app.config.runtime import RuntimeFlags
@@ -50,7 +52,7 @@ def test_refresh_persists_snapshots_and_computes_change(tmp_path):
     second = asyncio.run(worker.refresh_once())
 
     assert first.signals[0].probability_change is None
-    assert second.signals[0].probability_change == 0.3
+    assert second.signals[0].probability_change == pytest.approx(0.3)
     assert second.errors == ()
 
 
