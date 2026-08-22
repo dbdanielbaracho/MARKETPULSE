@@ -382,3 +382,40 @@ def test_commercial_api_rejects_missing_or_wrong_scope(tmp_path, monkeypatch):
     created = client.post("/api/v1/admin/api-keys", headers={"X-MarketPulse-Admin-Token":token}, json={"name":"History only","scopes":["history:read"],"daily_limit":10})
     key = created.json()["api_key"]
     assert client.get("/api/v1/commercial/markets", headers={"X-PrediBeacon-API-Key":key}).status_code == 401
+
+
+def test_canonical_market_slug_route_sitemap_and_route_eligibility(monkeypatch):
+    now = datetime.now(timezone.utc)
+    set_discovery_markets([
+        DiscoveryMarket(canonical_id="kalshi:canonical", title="Will inflation fall in 2027?", venue="kalshi", probability=.52, trend_score=74, observed_at=now, source_url="https://kalshi.com/markets/canonical"),
+        DiscoveryMarket(canonical_id="polymarket:unavailable", title="Unavailable route", venue="polymarket", probability=.40, trend_score=20, observed_at=now, source_url="https://example.com/not-allowed"),
+    ])
+    market = client.get("/api/v1/market", params={"market_id": "kalshi:canonical"}).json()
+    assert market["slug"].startswith("will-inflation-fall-in-2027-")
+    assert len(market["slug"].split("-")[-1]) == 10
+
+    page = client.get(f'/markets/{market["slug"]}')
+    assert page.status_code == 200
+    assert 'meta name="predibeacon-market-id" content="kalshi:canonical"' in page.text
+    assert f'rel="canonical" href="https://marketpulse-production-aa9f.up.railway.app/markets/{market["slug"]}"' in page.text
+    assert 'property="og:title"' in page.text
+
+    route = client.get("/api/v1/market/route", params={"market_id": "kalshi:canonical"}).json()
+    unavailable = client.get("/api/v1/market/route", params={"market_id": "polymarket:unavailable"}).json()
+    assert route["available"] is True
+    assert route["mode"] == "organic"
+    assert unavailable["available"] is False
+    assert unavailable["reason"] == "unverified_destination"
+
+    sitemap = client.get("/sitemap.xml")
+    assert f"/markets/{market['slug']}" in sitemap.text
+
+
+def test_market_slug_is_stable_for_same_identity():
+    now = datetime.now(timezone.utc)
+    original = DiscoveryMarket(canonical_id="kalshi:stable", title="Stable title", venue="kalshi", trend_score=1, observed_at=now)
+    set_discovery_markets([original])
+    first = client.get("/api/v1/market", params={"market_id": "kalshi:stable"}).json()["slug"]
+    set_discovery_markets([original])
+    second = client.get("/api/v1/market", params={"market_id": "kalshi:stable"}).json()["slug"]
+    assert first == second
