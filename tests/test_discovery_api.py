@@ -304,3 +304,28 @@ def test_campaign_slug_cannot_be_reassigned(tmp_path, monkeypatch):
     headers = {"X-MarketPulse-Admin-Token": token}
     assert client.post("/api/v1/admin/campaign-links", headers=headers, json={"slug":"fixed-link","market_id":"kalshi:a","channel":"x"}).status_code == 200
     assert client.post("/api/v1/admin/campaign-links", headers=headers, json={"slug":"fixed-link","market_id":"kalshi:b","channel":"x"}).status_code == 409
+
+
+def test_alert_embed_and_installable_surfaces():
+    now = datetime.now(timezone.utc)
+    set_discovery_markets([DiscoveryMarket(canonical_id="kalshi:widget", title="Widget market", venue="kalshi", probability=.58, trend_score=75, observed_at=now)])
+    alerts = client.get("/alerts", params={"market_id": "kalshi:widget"})
+    embed = client.get("/embed/market", params={"market_id": "kalshi:widget"})
+    manifest = client.get("/manifest.webmanifest")
+    worker = client.get("/service-worker.js")
+    market = client.get("/market", params={"market_id": "kalshi:widget"})
+    home = client.get("/")
+
+    assert alerts.status_code == 200
+    assert "Market alerts" in alerts.text
+    assert embed.status_code == 200
+    assert "POWERED BY PREDIBEACON" in embed.text
+    assert "frame-ancestors *" in embed.headers["content-security-policy"]
+    assert manifest.status_code == 200
+    assert manifest.headers["content-type"].startswith("application/manifest+json")
+    assert manifest.json()["name"] == "PrediBeacon"
+    assert worker.status_code == 200
+    assert worker.headers["service-worker-allowed"] == "/"
+    assert "Create alert" in market.text
+    assert "Copy embed code" in market.text
+    assert 'href="/alerts"' in home.text
