@@ -40,7 +40,7 @@ from app.storage.content_queue import ContentQueueStore, PersistenceProbe
 from app.storage.revenue import RevenueStore
 from app.storage.snapshots import SnapshotStore
 
-APP_VERSION = "0.37.0"
+APP_VERSION = "0.38.0"
 
 
 class DiscoveryMarket(BaseModel):
@@ -83,6 +83,13 @@ class MarketComparison(BaseModel):
     equivalent_contracts: bool
     reasons: list[str]
     warning: str
+
+
+class RelatedMarketView(BaseModel):
+    market: DiscoveryMarket
+    relationship: Literal["related", "insufficient_evidence"]
+    equivalent_contracts: Literal[False] = False
+    reasons: list[str]
 
 
 class MarketRouteView(BaseModel):
@@ -587,7 +594,7 @@ async def lifespan(_: FastAPI):
                     await task
 
 
-app = FastAPI(title="MarketPulse", version=APP_VERSION, lifespan=lifespan)
+app = FastAPI(title="PrediBeacon", version=APP_VERSION, lifespan=lifespan)
 
 
 @app.middleware("http")
@@ -605,7 +612,7 @@ async def redirect_www_to_canonical(request: Request, call_next):
 @app.get("/health")
 def health() -> dict[str, str]:
     """Deterministic readiness endpoint: never depends on external venues."""
-    return {"status": "ok", "service": "marketpulse-web", "version": APP_VERSION}
+    return {"status": "ok", "service": "predibeacon-web", "version": APP_VERSION}
 
 
 @app.get("/api/v1/status")
@@ -616,7 +623,7 @@ def status() -> dict[str, object]:
         for venue in ("kalshi", "polymarket")
     }
     return {
-        "service": "marketpulse-web",
+        "service": "predibeacon-web",
         "version": APP_VERSION,
         "country": "US",
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -1366,11 +1373,11 @@ def market_signal(market_id: str = Query(min_length=1, max_length=200)) -> Marke
     )
 
 
-@app.get("/api/v1/market/related", response_model=list[DiscoveryMarket])
+@app.get("/api/v1/market/related", response_model=list[RelatedMarketView])
 def related_markets(
     market_id: str = Query(min_length=1, max_length=200),
     limit: int = Query(default=6, ge=1, le=12),
-) -> list[DiscoveryMarket]:
+) -> list[RelatedMarketView]:
     market = _market_by_id(market_id)
     title_terms = {term for term in market.title.casefold().split() if len(term) >= 5}
     candidates = []
@@ -1382,7 +1389,25 @@ def related_markets(
         if overlap or same_category:
             candidates.append((same_category, overlap, item.trend_score, item))
     candidates.sort(key=lambda entry: (entry[0], entry[1], entry[2]), reverse=True)
-    return [entry[3] for entry in candidates[:limit]]
+    results: list[RelatedMarketView] = []
+    for same_category, overlap, _, item in candidates[:limit]:
+        match = decide_match(
+            MarketContractFacts(market.canonical_id, " ".join(market.title.casefold().split()), market.closes_at),
+            MarketContractFacts(item.canonical_id, " ".join(item.title.casefold().split()), item.closes_at),
+        )
+        reasons = list(match.reasons)
+        if same_category:
+            reasons.append("Markets share a discovery category.")
+        if overlap:
+            reasons.append(f"Titles share {overlap} meaningful term{'s' if overlap != 1 else ''}.")
+        relationship = "related" if same_category or overlap >= 2 else "insufficient_evidence"
+        results.append(RelatedMarketView(
+            market=item,
+            relationship=relationship,
+            equivalent_contracts=False,
+            reasons=reasons,
+        ))
+    return results
 
 
 @app.get("/alerts", response_class=HTMLResponse)
@@ -1425,6 +1450,12 @@ def market_embed() -> HTMLResponse:
 def web_manifest() -> Response:
     body = (Path(__file__).parent / "static" / "manifest.webmanifest").read_text(encoding="utf-8")
     return Response(body, media_type="application/manifest+json", headers={"Cache-Control": "public, max-age=3600"})
+
+
+@app.get("/icons/predibeacon.svg")
+def pwa_icon() -> Response:
+    body = (Path(__file__).parent / "static" / "predibeacon-icon.svg").read_text(encoding="utf-8")
+    return Response(body, media_type="image/svg+xml", headers={"Cache-Control": "public, max-age=86400"})
 
 
 @app.get("/service-worker.js")

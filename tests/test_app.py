@@ -9,7 +9,7 @@ def test_health_is_deterministic():
     response = client.get("/health")
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
-    assert response.json()["service"] == "marketpulse-web"
+    assert response.json()["service"] == "predibeacon-web"
 
 
 def test_status_exposes_country_and_version():
