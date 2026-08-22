@@ -28,6 +28,10 @@ _ALIASES = {
     "fomc": {"federal", "reserve", "monetary", "policy"},
     "sec": {"securities", "exchange", "commission"},
 }
+_PUBLISHER_ANCHORS = {
+    "Federal Reserve": {"fed", "federal", "reserve", "fomc", "interest", "inflation", "monetary"},
+    "U.S. Securities and Exchange Commission": {"sec", "securities", "commission", "ipo", "stock", "investor", "crypto", "regulation"},
+}
 
 
 class MarketLike(Protocol):
@@ -142,7 +146,8 @@ def associate(markets: list[MarketLike], evidence: list[EvidenceItem]) -> dict[s
         matches = []
         for item in evidence:
             candidate_tokens = _tokens(f"{item.title} {item.summary or ''}")
-            if len(market_tokens & candidate_tokens) >= 2:
+            anchors = _PUBLISHER_ANCHORS.get(item.publisher, set())
+            if market_tokens & anchors and len(market_tokens & candidate_tokens) >= 2:
                 matches.append(item)
         if matches:
             result[market.canonical_id] = matches[:5]

@@ -45,7 +45,11 @@ def test_association_requires_two_meaningful_terms():
     class Market:
         def __init__(self, identifier, title):
             self.canonical_id, self.title = identifier, title
-    result = associate([Market("match", "Fed monetary policy decision"), Market("miss", "Who will win the election?")], [item])
+    result = associate([
+        Market("match", "Fed monetary policy decision"),
+        Market("miss", "Who will win the election?"),
+        Market("sports", "yes New York M, yes Kansas City"),
+    ], [item])
     assert list(result) == ["match"]
 
 
