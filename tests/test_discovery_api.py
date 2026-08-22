@@ -63,3 +63,33 @@ def test_venue_filter_returns_requested_platform_only():
 
 def test_invalid_venue_is_rejected():
     assert client.get("/api/v1/markets?venue=unknown").status_code == 422
+
+
+def test_comparison_never_equates_same_title_with_different_deadline():
+    now = datetime(2026, 8, 22, tzinfo=timezone.utc)
+    set_discovery_markets([
+        DiscoveryMarket(canonical_id="kalshi:x", title="Will X happen?", venue="kalshi", probability=.5, volume_usd=1, trend_score=1, observed_at=now, closes_at=datetime(2026, 9, 1, tzinfo=timezone.utc)),
+        DiscoveryMarket(canonical_id="polymarket:x", title="Will X happen?", venue="polymarket", probability=.5, volume_usd=1, trend_score=1, observed_at=now, closes_at=datetime(2026, 9, 2, tzinfo=timezone.utc)),
+    ])
+    result = client.get("/api/v1/compare", params={"left_id": "kalshi:x", "right_id": "polymarket:x"})
+    assert result.status_code == 200
+    assert result.json()["decision"] == "not_equivalent"
+    assert result.json()["equivalent_contracts"] is False
+
+
+def test_comparison_fails_closed_when_rules_are_unavailable():
+    now = datetime(2026, 8, 22, tzinfo=timezone.utc)
+    set_discovery_markets([
+        DiscoveryMarket(canonical_id="kalshi:y", title="Will Y happen?", venue="kalshi", probability=.5, volume_usd=1, trend_score=1, observed_at=now),
+        DiscoveryMarket(canonical_id="polymarket:y", title="Will Y happen?", venue="polymarket", probability=.5, volume_usd=1, trend_score=1, observed_at=now),
+    ])
+    data = client.get("/api/v1/compare", params={"left_id": "kalshi:y", "right_id": "polymarket:y"}).json()
+    assert data["decision"] == "insufficient_evidence"
+    assert data["equivalent_contracts"] is False
+    assert "require matching" in data["warning"].lower()
+
+
+def test_comparison_returns_404_for_unknown_market():
+    seed()
+    response = client.get("/api/v1/compare", params={"left_id": "kalshi:a", "right_id": "kalshi:missing"})
+    assert response.status_code == 404

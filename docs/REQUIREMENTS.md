@@ -13,8 +13,8 @@ This registry is the scope-control source of truth. A requirement may not disapp
 | MP-007 | Normalized market model | VERIFIED | domain model + tests |
 | MP-008 | Snapshot history | VERIFIED | SQLite WAL snapshot store + tests |
 | MP-009 | Movers/trending discovery | VERIFIED | runtime ranking API/UI and reproducible production evidence in `docs/LIVE_EVIDENCE.md` |
-| MP-010 | Market equivalence must not be inferred from title similarity alone | IN_PROGRESS | fail-safe contract matcher + adversarial tests; CI/release evidence pending |
-| MP-011 | Market comparison UI with explicit non-equivalence handling | REQUIRED | UX + matching gate |
+| MP-010 | Market equivalence must not be inferred from title similarity alone | IN_PROGRESS | fail-safe matcher connected to comparison API; adversarial CI and deployed evidence pending |
+| MP-011 | Market comparison UI with explicit non-equivalence handling | IN_PROGRESS | comparison API + UI implementation; CI and deployed evidence pending |
 | MP-012 | News/evidence context engine | IN_PROGRESS | provenance model + canonical URL dedupe + explicit freshness states + source diversity gate; collectors/UI pending |
 | MP-013 | Automated AI content candidates | IN_PROGRESS | evidence-gated candidate classifier with update/create decisions; generation/queue persistence pending |
 | MP-014 | Automated website publishing | REQUIRED | content lifecycle + rollback |
