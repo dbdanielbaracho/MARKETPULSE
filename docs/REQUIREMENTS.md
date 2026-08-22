@@ -60,6 +60,8 @@ This registry is the scope-control source of truth. A requirement may not disapp
 | MP-054 | Scheduled editorial publication is durable, explicit and auditable | VERIFIED | approved-only schedule records, timezone-aware validation, idempotent due worker, admin controls and store regression tests implemented |
 | MP-055 | Offline caching never persists administrative, API, outbound or editorial responses | VERIFIED | versioned allowlisted service worker excludes sensitive prefixes and has regression coverage |
 | MP-056 | Public responses receive baseline browser security protections | VERIFIED | global nosniff, referrer, permissions, opener and HSTS headers; protected APIs force `no-store`; regression tests implemented |
+| MP-057 | Commercial API keys support auditable revocation and atomic rotation | VERIFIED | metadata-only listing, immediate revocation, transactional replacement, preserved scopes/limits and adversarial tests implemented |
+| MP-058 | Requests are traceable without trusting arbitrary caller identifiers | VERIFIED | bounded validated/generated request IDs, response timing, 1 MiB declared write limit and regression tests implemented |
 
 ## Change-control rule
 

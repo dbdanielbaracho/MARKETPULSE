@@ -40,7 +40,7 @@ from app.storage.content_queue import ContentQueueStore, PersistenceProbe
 from app.storage.revenue import RevenueStore
 from app.storage.snapshots import SnapshotStore
 
-APP_VERSION = "0.39.0"
+APP_VERSION = "0.40.0"
 
 
 class DiscoveryMarket(BaseModel):
@@ -153,6 +153,17 @@ class ApiKeyCreateResponse(BaseModel):
     scopes: list[str]
     daily_limit: int
     notice: str
+
+
+class ApiKeyView(BaseModel):
+    key_id: str
+    name: str
+    plan: str
+    scopes: list[str]
+    daily_limit: int
+    active: bool
+    created_at: datetime
+    revoked_at: datetime | None
 
 
 class PartnerRevenueEvent(BaseModel):
@@ -611,7 +622,26 @@ async def redirect_www_to_canonical(request: Request, call_next):
 
 @app.middleware("http")
 async def public_security_headers(request: Request, call_next):
+    supplied_request_id = request.headers.get("X-Request-ID", "")
+    request_id = supplied_request_id if re.fullmatch(r"[A-Za-z0-9._-]{8,64}", supplied_request_id) else str(uuid4())
+    declared_size = request.headers.get("content-length")
+    if request.method in {"POST", "PUT", "PATCH"} and declared_size:
+        try:
+            too_large = int(declared_size) > 1_048_576
+        except ValueError:
+            too_large = True
+        if too_large:
+            return Response(
+                json.dumps({"detail": "request body too large", "request_id": request_id}),
+                status_code=413,
+                media_type="application/json",
+                headers={"X-Request-ID": request_id, "Cache-Control": "no-store"},
+            )
+    started = time.perf_counter()
+    request.state.request_id = request_id
     response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
+    response.headers["Server-Timing"] = f'app;dur={(time.perf_counter() - started) * 1000:.1f}'
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
     response.headers.setdefault(
@@ -1284,6 +1314,65 @@ def create_commercial_api_key(payload: ApiKeyCreateRequest) -> ApiKeyCreateRespo
         scopes=list(payload.scopes),
         daily_limit=payload.daily_limit,
         notice="Store this key now. PrediBeacon retains only its SHA-256 hash.",
+    )
+
+
+@app.get(
+    "/api/v1/admin/api-keys",
+    response_model=list[ApiKeyView],
+    dependencies=[Depends(_require_admin)],
+)
+def list_commercial_api_keys(
+    limit: int = Query(default=100, ge=1, le=1000),
+) -> list[ApiKeyView]:
+    return [
+        ApiKeyView(
+            key_id=item.key_id,
+            name=item.name,
+            plan=item.plan,
+            scopes=list(item.scopes),
+            daily_limit=item.daily_limit,
+            active=item.active,
+            created_at=item.created_at,
+            revoked_at=item.revoked_at,
+        )
+        for item in ApiKeyStore(_database_path()).list_keys(limit)
+    ]
+
+
+@app.delete(
+    "/api/v1/admin/api-keys/{key_id}",
+    dependencies=[Depends(_require_admin)],
+)
+def revoke_commercial_api_key(key_id: str) -> dict[str, object]:
+    if not ApiKeyStore(_database_path()).revoke(key_id):
+        raise HTTPException(status_code=404, detail="active API key not found")
+    return {"key_id": key_id, "active": False}
+
+
+@app.post(
+    "/api/v1/admin/api-keys/{key_id}/rotate",
+    response_model=ApiKeyCreateResponse,
+    dependencies=[Depends(_require_admin)],
+)
+def rotate_commercial_api_key(key_id: str) -> ApiKeyCreateResponse:
+    new_key_id = str(uuid4())
+    raw_token = f"pb_live_{token_urlsafe(32)}"
+    try:
+        item = ApiKeyStore(_database_path()).rotate(
+            old_key_id=key_id,
+            new_key_id=new_key_id,
+            raw_token=raw_token,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="active API key not found") from exc
+    return ApiKeyCreateResponse(
+        key_id=item.key_id,
+        api_key=raw_token,
+        plan=item.plan,
+        scopes=list(item.scopes),
+        daily_limit=item.daily_limit,
+        notice="The previous key was revoked atomically. Store this replacement now; only its SHA-256 hash is retained.",
     )
 
 
