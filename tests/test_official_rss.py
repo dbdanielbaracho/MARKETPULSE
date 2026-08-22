@@ -5,7 +5,7 @@ import asyncio
 import httpx
 import pytest
 
-from app.adapters.official_rss import FeedSource, OfficialFeedCollector, associate, parse_feed
+from app.adapters.official_rss import FeedSource, OfficialFeedCollector, TrustedFeedCollector, associate, parse_feed
 from app.domain.evidence import EvidenceItem, EvidenceKind
 
 
@@ -49,7 +49,7 @@ def test_association_requires_two_meaningful_terms():
         Market("match", "Fed monetary policy decision"),
         Market("miss", "Who will win the election?"),
         Market("sports", "yes New York M, yes Kansas City"),
-    ], [item])
+    ], [item], (FED,))
     assert list(result) == ["match"]
 
 
@@ -71,3 +71,50 @@ def test_collector_isolates_source_failures():
     asyncio.run(client.aclose())
     assert "fed" in matched
     assert errors == ("Federal Reserve:HTTPStatusError",)
+
+
+def test_news_feed_requires_allowlisted_article_host_and_three_terms():
+    now = datetime.now(timezone.utc)
+    source = FeedSource(
+        "BBC News",
+        "https://feeds.bbci.co.uk/news/business/rss.xml",
+        EvidenceKind.NEWS,
+        ("www.bbc.com",),
+        3,
+    )
+    payload = f"""<rss><channel><item><title>Federal Reserve cuts interest rates</title><link>https://www.bbc.com/news/articles/rates</link><pubDate>{now.strftime('%a, %d %b %Y %H:%M:%S GMT')}</pubDate><description>Federal Reserve monetary policy changes.</description></item></channel></rss>""".encode()
+    items = parse_feed(payload, source, now)
+    class Market:
+        def __init__(self, identifier, title):
+            self.canonical_id, self.title = identifier, title
+    result = associate([
+        Market("match", "Will Federal Reserve cut interest rates?"),
+        Market("weak", "Will interest rates change?"),
+    ], items, (source,))
+    assert list(result) == ["match"]
+    assert result["match"][0].kind == EvidenceKind.NEWS
+
+
+def test_stale_news_cannot_be_associated():
+    now = datetime.now(timezone.utc)
+    source = FeedSource("NPR", "https://feeds.npr.org/1001/rss.xml", EvidenceKind.NEWS, ("www.npr.org",), 3)
+    item = EvidenceItem(
+        title="Federal Reserve cuts interest rates",
+        url="https://www.npr.org/sections/business/rates",
+        publisher="NPR",
+        kind=EvidenceKind.NEWS,
+        published_at=now.replace(year=now.year - 1),
+        retrieved_at=now,
+        summary="Federal Reserve monetary policy decision.",
+    )
+    class Market:
+        canonical_id = "fed"
+        title = "Federal Reserve interest rates"
+    assert associate([Market()], [item], (source,)) == {}
+
+
+def test_news_source_rejects_non_allowlisted_article_link():
+    now = datetime.now(timezone.utc)
+    source = FeedSource("NPR", "https://feeds.npr.org/1001/rss.xml", EvidenceKind.NEWS, ("www.npr.org",), 3)
+    payload = b"""<rss><channel><item><title>Federal Reserve interest rate decision</title><link>https://attacker.example/story</link></item></channel></rss>"""
+    assert parse_feed(payload, source, now) == []
