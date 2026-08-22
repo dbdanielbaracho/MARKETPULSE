@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import json
-from typing import Protocol
+from typing import Literal, Protocol
 
 from openai import AsyncOpenAI
 from pydantic import BaseModel, Field
 
 from app.domain.evidence import EvidenceItem
 from app.services.content_drafts import ContentDraft
+
+
+class AIVerificationOutput(BaseModel):
+    status: Literal["ok"]
 
 
 class AIDraftOutput(BaseModel):
@@ -38,6 +42,24 @@ class OpenAIDraftProvider:
             timeout=20.0,
             max_retries=2,
         ).responses
+
+    async def verify(self) -> None:
+        response = await self._responses.parse(
+            model=self.model,
+            store=False,
+            max_output_tokens=32,
+            reasoning={"effort": "minimal"},
+            input=[
+                {
+                    "role": "system",
+                    "content": "Return status ok. Do not use tools and do not add any other content.",
+                }
+            ],
+            text_format=AIVerificationOutput,
+        )
+        parsed = response.output_parsed
+        if parsed is None or parsed.status != "ok":
+            raise ValueError("OpenAI verification was refused or incomplete")
 
     async def generate(
         self,
