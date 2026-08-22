@@ -403,3 +403,13 @@ class ContentQueueStore:
             ).fetchall()
         result.update({state: count for state, count in rows})
         return result
+
+    def drafts_created_since(self, since: datetime) -> int:
+        if since.tzinfo is None:
+            raise ValueError("draft limit timestamp must be timezone-aware")
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT COUNT(*) FROM content_drafts WHERE created_at >= ?",
+                (since.isoformat(),),
+            ).fetchone()
+        return int(row[0])
