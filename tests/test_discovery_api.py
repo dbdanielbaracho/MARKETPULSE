@@ -329,3 +329,56 @@ def test_alert_embed_and_installable_surfaces():
     assert "Create alert" in market.text
     assert "Copy embed code" in market.text
     assert 'href="/alerts"' in home.text
+
+
+def test_timeline_and_commercial_api_key_quota(tmp_path, monkeypatch):
+    from datetime import timedelta
+    from app.services.intelligence import MarketSnapshot
+    from app.storage.snapshots import SnapshotStore
+
+    monkeypatch.setenv("MP_DATABASE_PATH", str(tmp_path / "commercial.db"))
+    token = "c" * 40
+    monkeypatch.setenv("MP_ADMIN_TOKEN", token)
+    now = datetime.now(timezone.utc)
+    set_discovery_markets([DiscoveryMarket(
+        canonical_id="kalshi:commercial", title="Commercial API market", venue="kalshi",
+        probability=.66, trend_score=81, observed_at=now,
+        source_url="https://kalshi.com/markets/commercial",
+    )])
+    SnapshotStore(str(tmp_path / "commercial.db")).append(MarketSnapshot("kalshi:commercial", .61, 1000, now - timedelta(hours=1)))
+
+    created = client.post(
+        "/api/v1/admin/api-keys",
+        headers={"X-MarketPulse-Admin-Token": token},
+        json={"name": "API customer", "plan": "starter", "scopes": ["markets:read", "history:read"], "daily_limit": 2},
+    )
+    assert created.status_code == 200
+    api_key = created.json()["api_key"]
+    assert api_key.startswith("pb_live_")
+    headers = {"X-PrediBeacon-API-Key": api_key}
+
+    markets_response = client.get("/api/v1/commercial/markets", headers=headers)
+    history_response = client.get("/api/v1/commercial/history", headers=headers, params={"market_id": "kalshi:commercial"})
+    quota_response = client.get("/api/v1/commercial/markets", headers=headers)
+    timeline = client.get("/api/v1/market/timeline", params={"market_id": "kalshi:commercial"})
+
+    assert markets_response.status_code == 200
+    assert markets_response.json()[0]["canonical_id"] == "kalshi:commercial"
+    assert history_response.status_code == 200
+    assert history_response.json()[0]["probability"] == .61
+    assert quota_response.status_code == 429
+    assert timeline.status_code == 200
+    assert timeline.json()[0]["kind"] in {"probability", "venue"}
+    assert "Market timeline" in client.get("/market", params={"market_id": "kalshi:commercial"}).text
+
+
+def test_commercial_api_rejects_missing_or_wrong_scope(tmp_path, monkeypatch):
+    monkeypatch.setenv("MP_DATABASE_PATH", str(tmp_path / "commercial.db"))
+    token = "d" * 40
+    monkeypatch.setenv("MP_ADMIN_TOKEN", token)
+    now = datetime.now(timezone.utc)
+    set_discovery_markets([DiscoveryMarket(canonical_id="kalshi:scope", title="Scoped", venue="kalshi", trend_score=1, observed_at=now)])
+    assert client.get("/api/v1/commercial/markets").status_code == 401
+    created = client.post("/api/v1/admin/api-keys", headers={"X-MarketPulse-Admin-Token":token}, json={"name":"History only","scopes":["history:read"],"daily_limit":10})
+    key = created.json()["api_key"]
+    assert client.get("/api/v1/commercial/markets", headers={"X-PrediBeacon-API-Key":key}).status_code == 401
