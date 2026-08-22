@@ -23,9 +23,9 @@ This registry is the scope-control source of truth. A requirement may not disapp
 | MP-017 | TikTok distribution | REQUIRED | provider/policy integration |
 | MP-018 | Telegram distribution | REQUIRED | provider integration |
 | MP-019 | WhatsApp distribution where channel policy permits | REQUIRED | policy + provider integration |
-| MP-020 | Outbound router is country/partner/market aware and fail-closed | IN_PROGRESS | policy exists; runtime/tests pending |
-| MP-021 | Partner attribution | REQUIRED | click/event state machine |
-| MP-022 | Partner revenue states: pending/approved/payable/paid/reversed etc. | REQUIRED | reconciliation model/tests |
+| MP-020 | Outbound router is country/partner/market aware and fail-closed | IN_PROGRESS | server-side route IDs + HTTPS host allowlist + commercial verification gate; market-level eligibility/UI pending |
+| MP-021 | Partner attribution | IN_PROGRESS | attribution/revenue state model exists; click persistence + partner event reconciliation pending |
+| MP-022 | Partner revenue states: pending/approved/payable/paid/reversed etc. | IN_PROGRESS | explicit guarded state machine + tests; persistence/reconciliation pending |
 | MP-023 | Revenue dashboard; no unnecessary user-funds accounting | REQUIRED | dashboard/reconciliation |
 | MP-024 | Mobile-first, simple, accessible website | IN_PROGRESS | dynamic baseline UI; usability/accessibility audit pending |
 | MP-025 | Search and category discovery | IN_PROGRESS | dynamic API/UI implemented; live worker pending |
@@ -35,7 +35,7 @@ This registry is the scope-control source of truth. A requirement may not disapp
 | MP-029 | Secrets never committed | REQUIRED | secret scanning/config gate |
 | MP-030 | Observability, retries, timeouts, rate-limit handling | REQUIRED | metrics/logs/backoff tests |
 | MP-031 | Feature flags and kill switches for external venues/publishing | REQUIRED | runtime policy tests |
-| MP-032 | Partner economics never invented; require evidence/config | REQUIRED | partner config validation |
+| MP-032 | Partner economics never invented; require evidence/config | IN_PROGRESS | router requires commercial_verified; commission amount absent unless supplied by partner evidence; config validation pending |
 | MP-033 | Global-ready locale/currency/timezone/policy boundaries | IN_PROGRESS | country packs; runtime localization pending |
 | MP-034 | Future integration path with broader global platform preserved | REQUIRED | bounded interfaces/ADR |
 | MP-035 | Final evidence audit: requirement -> code -> config -> test -> result | REQUIRED | release checklist |
