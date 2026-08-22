@@ -26,12 +26,19 @@ class KalshiAdapter:
     @staticmethod
     def normalize(item: dict[str, Any]) -> NormalizedMarket:
         probability = None
-        yes_bid = item.get("yes_bid")
-        yes_ask = item.get("yes_ask")
-        if isinstance(yes_bid, (int, float)) and isinstance(yes_ask, (int, float)):
-            probability = ((float(yes_bid) + float(yes_ask)) / 2.0) / 100.0
-        elif isinstance(item.get("last_price"), (int, float)):
-            probability = float(item["last_price"]) / 100.0
+        yes_bid_dollars = item.get("yes_bid_dollars")
+        yes_ask_dollars = item.get("yes_ask_dollars")
+        if yes_bid_dollars is not None and yes_ask_dollars is not None:
+            probability = (float(yes_bid_dollars) + float(yes_ask_dollars)) / 2.0
+        else:
+            yes_bid = item.get("yes_bid")
+            yes_ask = item.get("yes_ask")
+            if isinstance(yes_bid, (int, float)) and isinstance(yes_ask, (int, float)):
+                probability = ((float(yes_bid) + float(yes_ask)) / 2.0) / 100.0
+            elif item.get("last_price_dollars") is not None:
+                probability = float(item["last_price_dollars"])
+            elif isinstance(item.get("last_price"), (int, float)):
+                probability = float(item["last_price"]) / 100.0
 
         close_time = item.get("close_time")
         closes_at = datetime.fromisoformat(close_time.replace("Z", "+00:00")) if close_time else None
@@ -42,7 +49,13 @@ class KalshiAdapter:
             title=str(item.get("title") or item.get("subtitle") or ticker),
             category=item.get("category"),
             yes_probability=probability,
-            volume_usd=float(item["volume"]) if isinstance(item.get("volume"), (int, float)) else None,
+            volume_usd=(
+                float(item["volume_fp"])
+                if item.get("volume_fp") is not None
+                else float(item["volume"])
+                if isinstance(item.get("volume"), (int, float))
+                else None
+            ),
             closes_at=closes_at,
             source_url=f"https://kalshi.com/markets/{ticker}" if ticker else None,
             raw=item,
