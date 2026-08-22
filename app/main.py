@@ -28,7 +28,7 @@ from app.services.matching import MarketContractFacts, decide_match
 from app.storage.content_queue import ContentQueueStore, PersistenceProbe
 from app.storage.snapshots import SnapshotStore
 
-APP_VERSION = "0.15.0"
+APP_VERSION = "0.16.0"
 
 
 class DiscoveryMarket(BaseModel):
@@ -81,6 +81,7 @@ _LAST_EVIDENCE_ERRORS: tuple[str, ...] = ()
 _CONTENT_QUEUE_COUNTS: dict[str, int] = {}
 _CONTENT_DRAFT_COUNTS: dict[str, int] = {}
 _AI_DRAFTS_ERROR: str | None = None
+_AI_PROVIDER_VERIFIED = False
 _AI_DRAFTS_TODAY = 0
 _AI_DAILY_LIMIT_REACHED = False
 _STORAGE_PROBE: PersistenceProbe | None = None
@@ -327,7 +328,7 @@ def freshness(now: datetime | None = None) -> tuple[str, float | None]:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    global _CONTENT_QUEUE_COUNTS, _CONTENT_DRAFT_COUNTS, _AI_DRAFTS_ERROR, _AI_DRAFTS_TODAY, _AI_DAILY_LIMIT_REACHED, _STORAGE_PROBE, _PERSISTENT_STORAGE_CONFIGURED
+    global _CONTENT_QUEUE_COUNTS, _CONTENT_DRAFT_COUNTS, _AI_DRAFTS_ERROR, _AI_PROVIDER_VERIFIED, _AI_DRAFTS_TODAY, _AI_DAILY_LIMIT_REACHED, _STORAGE_PROBE, _PERSISTENT_STORAGE_CONFIGURED
     flags = RuntimeFlags.from_env()
     database_path = os.getenv("MP_DATABASE_PATH", "/tmp/marketpulse.db")
     store = SnapshotStore(database_path)
@@ -344,12 +345,20 @@ async def lifespan(_: FastAPI):
     )
     ai_provider = None
     _AI_DRAFTS_ERROR = None
+    _AI_PROVIDER_VERIFIED = False
     _AI_DRAFTS_TODAY = 0
     _AI_DAILY_LIMIT_REACHED = False
     if _ai_drafts_enabled():
         api_key = os.getenv("MP_OPENAI_API_KEY", "").strip()
         if api_key:
             ai_provider = OpenAIDraftProvider(api_key=api_key, model=_ai_model())
+            try:
+                await ai_provider.verify()
+            except Exception:
+                _AI_DRAFTS_ERROR = "provider_verification_failed"
+                ai_provider = None
+            else:
+                _AI_PROVIDER_VERIFIED = True
         else:
             _AI_DRAFTS_ERROR = "missing_api_key"
 
@@ -433,6 +442,7 @@ def status() -> dict[str, object]:
             "provider": "openai" if _ai_drafts_enabled() else None,
             "model": _ai_model() if _ai_drafts_enabled() else None,
             "configured": bool(os.getenv("MP_OPENAI_API_KEY", "").strip()),
+            "verified": _AI_PROVIDER_VERIFIED,
             "error": _AI_DRAFTS_ERROR,
             "daily_limit": _ai_daily_limit(),
             "drafts_today": _AI_DRAFTS_TODAY,
