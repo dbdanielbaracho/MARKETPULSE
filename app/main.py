@@ -18,7 +18,7 @@ from app.config.runtime import RuntimeFlags
 from app.services.ingestion import IngestionWorker, RefreshBatch
 from app.storage.snapshots import SnapshotStore
 
-APP_VERSION = "0.3.2"
+APP_VERSION = "0.3.3"
 
 
 class DiscoveryMarket(BaseModel):
@@ -143,12 +143,15 @@ def status() -> dict[str, object]:
 def markets(
     sort: Literal["trending", "movers", "volume"] = "trending",
     category: str | None = None,
+    venue: Literal["kalshi", "polymarket"] | None = None,
     q: str | None = Query(default=None, max_length=120),
     limit: int = Query(default=50, ge=1, le=100),
 ) -> list[DiscoveryMarket]:
     items = _DISCOVERY
     if category:
         items = [item for item in items if (item.category or "").casefold() == category.casefold()]
+    if venue:
+        items = [item for item in items if item.venue == venue]
     if q:
         needle = q.casefold().strip()
         items = [item for item in items if needle in item.title.casefold()]

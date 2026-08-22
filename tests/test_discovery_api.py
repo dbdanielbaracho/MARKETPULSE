@@ -52,3 +52,14 @@ def test_equal_scores_are_balanced_across_venues():
     ])
     data = client.get("/api/v1/markets?sort=trending&limit=4").json()
     assert [item["venue"] for item in data] == ["kalshi", "polymarket", "kalshi", "polymarket"]
+
+
+def test_venue_filter_returns_requested_platform_only():
+    seed()
+    data = client.get("/api/v1/markets?venue=kalshi").json()
+    assert len(data) == 2
+    assert {item["venue"] for item in data} == {"kalshi"}
+
+
+def test_invalid_venue_is_rejected():
+    assert client.get("/api/v1/markets?venue=unknown").status_code == 422
