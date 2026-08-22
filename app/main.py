@@ -792,12 +792,14 @@ def operations_snapshot() -> dict[str, object]:
     storage = snapshot["storage"]
     ai = snapshot["ai_drafts"]
     queue_counts = snapshot["content_queue_counts"]
+    backup = snapshot["database_backup"]
     checks = [
         {"name": "Market freshness", "ok": snapshot["freshness"] == "fresh", "severity": "critical" if snapshot["freshness"] in {"unavailable", "future"} else "warning", "detail": f'Data state is {snapshot["freshness"]}; age={snapshot["data_age_seconds"]}s.'},
         {"name": "Venue ingestion", "ok": venue_counts["kalshi"] > 0 and venue_counts["polymarket"] > 0, "severity": "critical", "detail": f'Kalshi={venue_counts["kalshi"]}; Polymarket={venue_counts["polymarket"]}.'},
         {"name": "Refresh errors", "ok": snapshot["last_refresh_errors"] is None, "severity": "critical", "detail": snapshot["last_refresh_errors"] or "No venue refresh errors."},
         {"name": "Evidence sources", "ok": snapshot["official_evidence_errors"] is None, "severity": "warning", "detail": snapshot["official_evidence_errors"] or f'{snapshot["evidence_source_total_item_count"]} source items available.'},
         {"name": "Persistent storage", "ok": bool(storage["writable"] and storage["persistent_volume_configured"]), "severity": "critical", "detail": "Persistent volume is writable." if storage["writable"] else "Storage is not writable."},
+        {"name": "Database backup", "ok": not backup["enabled"] or (backup["error"] is None and backup["last_integrity"] in {None, "ok"}), "severity": "warning", "detail": backup["error"] or (f'{backup["retained"]} verified backups retained.' if backup["last_created_at"] else "Initial backup pending.")},
         {"name": "AI draft provider", "ok": not ai["enabled"] or bool(ai["configured"] and ai["verified"] and not ai["error"]), "severity": "warning", "detail": ai["error"] or ("Provider verified." if ai["enabled"] else "AI drafts disabled.")},
         {"name": "Failed content jobs", "ok": queue_counts.get("failed", 0) == 0, "severity": "warning", "detail": f'{queue_counts.get("failed", 0)} failed queue items.'},
         {"name": "Distribution safety", "ok": not snapshot["automated_publishing_enabled"] and not snapshot["social_distribution_enabled"], "severity": "critical", "detail": "Automated publishing and social distribution are disabled." if not snapshot["automated_publishing_enabled"] and not snapshot["social_distribution_enabled"] else "A distribution switch is enabled."},
