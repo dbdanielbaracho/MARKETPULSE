@@ -24,8 +24,8 @@ This registry is the scope-control source of truth. A requirement may not disapp
 | MP-018 | Telegram distribution | IN_PROGRESS | fail-closed readiness gate; bot/provider integration pending |
 | MP-019 | WhatsApp distribution where channel policy permits | IN_PROGRESS | fail-closed readiness gate; policy approval and provider integration pending |
 | MP-020 | Outbound router is country/partner/market aware and fail-closed | IN_PROGRESS | first-party market-level outbound endpoint, exact venue/market validation, HTTPS allowlist and new-tab UI implemented; organic clicks work while commercial partner identity remains evidence-gated |
-| MP-021 | Partner attribution | IN_PROGRESS | durable click ledger now captures market, campaign, creator, channel and referrer before redirect; partner conversion adapter remains pending |
-| MP-022 | Partner revenue states: pending/approved/payable/paid/reversed etc. | IN_PROGRESS | guarded state machine plus durable idempotent partner-event transitions and audit log; live partner reconciliation pending |
+| MP-021 | Partner attribution | IN_PROGRESS | durable click context plus signed venue-specific reconciliation intake, click lookup, idempotent partner events and creator aggregation implemented; live partner payload mapping pending |
+| MP-022 | Partner revenue states: pending/approved/payable/paid/reversed etc. | IN_PROGRESS | guarded state machine, HMAC-authenticated webhook, timestamp replay window, idempotent transitions and audit log implemented; live partner credentials/events pending |
 | MP-023 | Revenue dashboard; no unnecessary user-funds accounting | VERIFIED | durable ledger plus protected 0.29.0 dashboard; zero-state and tests prove only partner-reported currency amounts are counted and no user-funds ledger exists |
 | MP-024 | Mobile-first, simple, accessible website | IN_PROGRESS | discovery cards now open an internal market journey with responsive detail view, local watchlist, sharing and explicit external-new-tab CTA; production usability evidence pending |
 | MP-025 | Search and category discovery | VERIFIED | deployed API/UI filters with production evidence in `docs/LIVE_EVIDENCE.md` |
@@ -46,7 +46,7 @@ This registry is the scope-control source of truth. A requirement may not disapp
 | MP-040 | Probability history and event timeline | VERIFIED | bounded snapshot history and combined probability/evidence timeline API/UI implemented with timestamps, source links and public chart periods |
 | MP-041 | Explain trend and movement using attributable evidence | VERIFIED | observational signal explanations plus timestamped venue/news/official/research evidence timeline implemented without unsupported causal claims |
 | MP-042 | Alerts for thresholds, material moves, evidence and closing time | IN_PROGRESS | browser-local probability-threshold preferences, permission flow, five-minute active-session checks and notifications implemented; durable background delivery and other trigger types pending |
-| MP-043 | Creator pages, lists, tracked links and paid-revenue-only sharing | IN_PROGRESS | public creator selections, durable campaign links and paid-revenue-only disclosure implemented; creator authentication and payout statements pending |
+| MP-043 | Creator pages, lists, tracked links and paid-revenue-only sharing | IN_PROGRESS | selections, campaign links and protected creator revenue summary based only on paid partner revenue implemented; agreement-driven split and creator authentication pending |
 | MP-044 | Embeddable widgets remain visibly Powered by PrediBeacon | VERIFIED | responsive iframe widget, visible Powered by PrediBeacon attribution, internal campaign routing and copy-embed action implemented |
 | MP-045 | PrediBeacon Pro subscriptions for advanced intelligence | REQUIRED | product packaging, entitlements and billing pending |
 | MP-046 | Commercial API for normalized data and proprietary signals | IN_PROGRESS | hashed one-time API keys, scoped markets/history access, atomic daily quotas and starter/pro/business plan metadata implemented; billing and customer portal pending |
@@ -55,6 +55,7 @@ This registry is the scope-control source of truth. A requirement may not disapp
 | MP-049 | Daily Top 10 discovery surfaces trending, movers and volume rankings | VERIFIED | responsive public Top 10 view uses live normalized ranking API and preserves onsite campaign attribution |
 | MP-050 | Installable mobile web experience | IN_PROGRESS | web manifest, standalone metadata and bounded same-origin service-worker shell implemented; icons and offline data-state design pending |
 | MP-051 | Commercial API credentials are never stored in plaintext | VERIFIED | one-time pb_live secret issuance, SHA-256 at-rest hashing, protected admin creation, scope checks and quota tests implemented |
+| MP-052 | Partner reconciliation events are authenticated and replay-bounded | VERIFIED | venue-specific HMAC-SHA256 signatures, five-minute timestamp window, exact venue validation, idempotent event IDs and adversarial tests implemented |
 
 ## Change-control rule
 
