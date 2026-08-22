@@ -97,3 +97,17 @@ def test_www_redirects_to_canonical_origin_without_losing_path_or_query():
 def test_non_www_hosts_are_not_redirected():
     response = client.get("/health", headers={"host": "predibeacon.com"}, follow_redirects=False)
     assert response.status_code == 200
+
+
+def test_home_exposes_explicit_accessible_names_and_touch_targets():
+    response = client.get("/")
+    for label in (
+        "Find a market",
+        "Sort markets",
+        "Filter by platform",
+        "First market to compare",
+        "Second market to compare",
+    ):
+        assert f'aria-label="{label}"' in response.text
+    assert "min-height:44px" in response.text
+    assert 'aria-atomic="true"' in response.text
