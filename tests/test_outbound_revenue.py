@@ -1,6 +1,14 @@
+import hashlib
+import hmac
+import json
+import time
+
 import pytest
+from fastapi.testclient import TestClient
 
 from app.domain.revenue import AttributionRecord, RevenueState
+from app.main import app
+from app.storage.revenue import RevenueStore
 from app.services.outbound import PartnerRoute, resolve_outbound
 
 
@@ -57,3 +65,61 @@ def test_invalid_revenue_transition_fails_closed():
 def test_duplicate_state_is_idempotent():
     record = AttributionRecord("a1", "c1", "p1", "kalshi", "US")
     assert record.transition(RevenueState.CLICKED) is record
+
+
+def _signed_partner_post(client, venue, secret, payload, timestamp=None):
+    timestamp = timestamp or int(time.time())
+    body = json.dumps(payload, separators=(",", ":"))
+    signature = hmac.new(secret.encode(), f"{timestamp}.".encode() + body.encode(), hashlib.sha256).hexdigest()
+    return client.post(
+        f"/api/v1/partners/{venue}/events",
+        content=body,
+        headers={
+            "content-type": "application/json",
+            "X-PrediBeacon-Partner-Timestamp": str(timestamp),
+            "X-PrediBeacon-Partner-Signature": f"sha256={signature}",
+        },
+    )
+
+
+def test_signed_partner_reconciliation_and_creator_paid_summary(tmp_path, monkeypatch):
+    path = str(tmp_path / "revenue.db")
+    secret = "partner-secret-" + "x" * 32
+    monkeypatch.setenv("MP_DATABASE_PATH", path)
+    monkeypatch.setenv("MP_KALSHI_WEBHOOK_SECRET", secret)
+    store = RevenueStore(path)
+    store.record_click(AttributionRecord("attr-1", "click-1", "kalshi-partner", "kalshi", "US"))
+    store.record_click_context(click_id="click-1", market_id="kalshi:m", campaign_id="creator-campaign", creator_id="creator-1", channel="tiktok", referrer=None)
+    client = TestClient(app)
+    states = ["attributed", "qualified", "commission_pending", "approved", "payable", "paid"]
+    last = None
+    for index, state in enumerate(states):
+        payload = {"event_id": f"event-{index}", "click_id": "click-1", "state": state}
+        if state == "approved":
+            payload.update({"commission_amount": 12.50, "currency": "USD"})
+        last = _signed_partner_post(client, "kalshi", secret, payload)
+        assert last.status_code == 200, last.text
+    assert last.json()["state"] == "paid"
+    assert last.json()["commission_amount"] == 12.50
+    summary = store.creator_summary("creator-1")
+    assert summary["paid_partner_revenue_totals"] == {"USD": 12.50}
+    assert summary["creator_amount_due"] is None
+
+
+def test_partner_events_reject_bad_signature_stale_time_and_wrong_venue(tmp_path, monkeypatch):
+    path = str(tmp_path / "revenue.db")
+    secret = "partner-secret-" + "y" * 32
+    monkeypatch.setenv("MP_DATABASE_PATH", path)
+    monkeypatch.setenv("MP_KALSHI_WEBHOOK_SECRET", secret)
+    monkeypatch.setenv("MP_POLYMARKET_WEBHOOK_SECRET", secret)
+    store = RevenueStore(path)
+    store.record_click(AttributionRecord("attr-2", "click-2", "kalshi-partner", "kalshi", "US"))
+    client = TestClient(app)
+    payload = {"event_id": "bad-event", "click_id": "click-2", "state": "attributed"}
+    bad = client.post("/api/v1/partners/kalshi/events", json=payload, headers={"X-PrediBeacon-Partner-Timestamp": str(int(time.time())), "X-PrediBeacon-Partner-Signature": "bad"})
+    stale = _signed_partner_post(client, "kalshi", secret, payload, int(time.time()) - 600)
+    wrong = _signed_partner_post(client, "polymarket", secret, payload)
+    assert bad.status_code == 401
+    assert stale.status_code == 401
+    assert wrong.status_code == 409
+    assert store.get("attr-2").state is RevenueState.CLICKED

@@ -146,6 +146,65 @@ class RevenueStore:
                 ),
             )
 
+    def get(self, attribution_id: str) -> AttributionRecord:
+        with self._connection() as connection:
+            row = connection.execute(
+                "SELECT * FROM revenue_attributions WHERE attribution_id=?",
+                (attribution_id,),
+            ).fetchone()
+        if row is None:
+            raise KeyError(attribution_id)
+        return self._record(row)
+
+    def attribution_id_for_click(self, click_id: str) -> str:
+        with self._connection() as connection:
+            row = connection.execute(
+                "SELECT attribution_id FROM revenue_attributions WHERE click_id=?",
+                (click_id,),
+            ).fetchone()
+        if row is None:
+            raise KeyError(click_id)
+        return row["attribution_id"]
+
+    def creator_summary(self, creator_id: str) -> dict[str, object]:
+        with self._connection() as connection:
+            state_counts = {
+                row["state"]: row["count"]
+                for row in connection.execute(
+                    """SELECT a.state, COUNT(*) AS count
+                    FROM revenue_attributions a
+                    JOIN outbound_click_context c ON c.click_id=a.click_id
+                    WHERE c.creator_id=? GROUP BY a.state""",
+                    (creator_id,),
+                )
+            }
+            paid_totals = {
+                row["currency"]: round(row["amount"], 2)
+                for row in connection.execute(
+                    """SELECT a.currency, SUM(a.commission_amount) AS amount
+                    FROM revenue_attributions a
+                    JOIN outbound_click_context c ON c.click_id=a.click_id
+                    WHERE c.creator_id=? AND a.state='paid'
+                      AND a.commission_amount IS NOT NULL AND a.currency IS NOT NULL
+                    GROUP BY a.currency""",
+                    (creator_id,),
+                )
+            }
+            row = connection.execute(
+                """SELECT COUNT(*) AS clicks, COUNT(DISTINCT c.market_id) AS markets
+                FROM outbound_click_context c WHERE c.creator_id=?""",
+                (creator_id,),
+            ).fetchone()
+        return {
+            "creator_id": creator_id,
+            "click_count": row["clicks"],
+            "market_count": row["markets"],
+            "state_counts": state_counts,
+            "paid_partner_revenue_totals": paid_totals,
+            "creator_amount_due": None,
+            "notice": "Creator amount is not calculated until an approved revenue-share agreement is configured.",
+        }
+
     def transition(
         self,
         attribution_id: str,
