@@ -252,7 +252,8 @@ def test_history_signal_related_and_watchlist(tmp_path, monkeypatch):
     assert [point["probability"] for point in history.json()] == [.55, .72]
     assert signal.json()["label"] == "rising_fast"
     assert signal.json()["reasons"]
-    assert related.json()[0]["canonical_id"] == "polymarket:related"
+    assert related.json()[0]["market"]["canonical_id"] == "polymarket:related"
+    assert related.json()[0]["equivalent_contracts"] is False
     assert watchlist.status_code == 200
     assert "Your watchlist" in watchlist.text
 
