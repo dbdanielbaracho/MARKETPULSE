@@ -33,7 +33,7 @@ This registry is the scope-control source of truth. A requirement may not disapp
 | MP-027 | GitHub PR + CI gates | VERIFIED | repository workflow |
 | MP-028 | Railway staging with deterministic healthcheck | VERIFIED | Docker deployment + /health |
 | MP-029 | Secrets never committed | REQUIRED | secret scanning/config gate |
-| MP-030 | Observability, retries, timeouts, rate-limit handling | IN_PROGRESS | bounded retries/timeouts + refresh error status; metrics/rate-limit telemetry pending |
+| MP-030 | Observability, retries, timeouts, rate-limit handling | IN_PROGRESS | transient-only retries for 429/5xx/network, bounded timeouts, structured refresh logs/status and failure isolation; metrics dashboard pending |
 | MP-031 | Feature flags and kill switches for external venues/publishing | VERIFIED | fail-closed runtime flags + worker enforcement + tests |
 | MP-032 | Partner economics never invented; require evidence/config | IN_PROGRESS | router requires commercial_verified; commission amount absent unless supplied by partner evidence; config validation pending |
 | MP-033 | Global-ready locale/currency/timezone/policy boundaries | IN_PROGRESS | country packs; runtime localization pending |
