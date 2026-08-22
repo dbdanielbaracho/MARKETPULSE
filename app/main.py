@@ -28,7 +28,7 @@ from app.services.matching import MarketContractFacts, decide_match
 from app.storage.content_queue import ContentQueueStore, PersistenceProbe
 from app.storage.snapshots import SnapshotStore
 
-APP_VERSION = "0.16.0"
+APP_VERSION = "0.17.0"
 
 
 class DiscoveryMarket(BaseModel):
@@ -78,6 +78,8 @@ _LAST_REFRESH_ERRORS: tuple[str, ...] = ()
 _EXTERNAL_EVIDENCE: dict[str, list[EvidenceItem]] = {}
 _LAST_EVIDENCE_REFRESH_AT: datetime | None = None
 _LAST_EVIDENCE_ERRORS: tuple[str, ...] = ()
+_EVIDENCE_SOURCE_ITEM_COUNTS: dict[str, int] = {}
+_EVIDENCE_SOURCE_TOTAL_ITEMS = 0
 _CONTENT_QUEUE_COUNTS: dict[str, int] = {}
 _CONTENT_DRAFT_COUNTS: dict[str, int] = {}
 _AI_DRAFTS_ERROR: str | None = None
@@ -227,13 +229,15 @@ def _evidence_refresh_interval() -> float:
 
 
 async def run_external_evidence_forever(stop: asyncio.Event, queue: ContentQueueStore) -> None:
-    global _EXTERNAL_EVIDENCE, _LAST_EVIDENCE_REFRESH_AT, _LAST_EVIDENCE_ERRORS, _CONTENT_QUEUE_COUNTS
+    global _EXTERNAL_EVIDENCE, _LAST_EVIDENCE_REFRESH_AT, _LAST_EVIDENCE_ERRORS, _EVIDENCE_SOURCE_ITEM_COUNTS, _EVIDENCE_SOURCE_TOTAL_ITEMS, _CONTENT_QUEUE_COUNTS
     collector = TrustedFeedCollector()
     while not stop.is_set():
         if _DISCOVERY:
             matched, errors = await collector.collect(list(_DISCOVERY))
             _EXTERNAL_EVIDENCE = matched
             _LAST_EVIDENCE_ERRORS = errors
+            _EVIDENCE_SOURCE_ITEM_COUNTS = dict(collector.last_source_item_counts)
+            _EVIDENCE_SOURCE_TOTAL_ITEMS = collector.last_total_item_count
             _LAST_EVIDENCE_REFRESH_AT = datetime.now(timezone.utc)
             if _content_candidates_enabled():
                 policy = ContentPolicy()
@@ -424,6 +428,8 @@ def status() -> dict[str, object]:
         "official_evidence_last_refresh_at": _LAST_EVIDENCE_REFRESH_AT.isoformat() if _LAST_EVIDENCE_REFRESH_AT else None,
         "official_evidence_errors": ",".join(_LAST_EVIDENCE_ERRORS) or None,
         "official_evidence_market_count": len(_EXTERNAL_EVIDENCE),
+        "evidence_source_item_counts": _EVIDENCE_SOURCE_ITEM_COUNTS,
+        "evidence_source_total_item_count": _EVIDENCE_SOURCE_TOTAL_ITEMS,
         "official_evidence_item_count": sum(
             1 for items in _EXTERNAL_EVIDENCE.values() for item in items
             if item.kind == EvidenceKind.OFFICIAL
