@@ -5,7 +5,7 @@ import html
 import json
 import os
 from contextlib import asynccontextmanager, suppress
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from itertools import groupby
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -18,11 +18,12 @@ from pydantic import BaseModel, Field
 from app.adapters.kalshi import KalshiAdapter
 from app.adapters.polymarket import PolymarketAdapter
 from app.config.runtime import RuntimeFlags
+from app.domain.evidence import EvidenceBundle, EvidenceItem, EvidenceKind
 from app.services.ingestion import IngestionWorker, RefreshBatch
 from app.services.matching import MarketContractFacts, decide_match
 from app.storage.snapshots import SnapshotStore
 
-APP_VERSION = "0.6.0"
+APP_VERSION = "0.7.0"
 
 
 class DiscoveryMarket(BaseModel):
@@ -36,6 +37,25 @@ class DiscoveryMarket(BaseModel):
     trend_score: float = Field(ge=0, le=100)
     observed_at: datetime
     closes_at: datetime | None = None
+    source_url: str | None = None
+
+
+class EvidenceView(BaseModel):
+    evidence_id: str
+    title: str
+    url: str
+    publisher: str
+    kind: Literal["venue", "news", "official", "research"]
+    freshness: Literal["fresh", "stale", "future_dated", "undated"]
+    published_at: datetime | None
+    retrieved_at: datetime
+
+
+class MarketEvidenceResponse(BaseModel):
+    market_id: str
+    generated_at: datetime
+    publisher_count: int
+    items: list[EvidenceView]
 
 
 class MarketComparison(BaseModel):
@@ -81,6 +101,7 @@ def publish_refresh_batch(batch: RefreshBatch) -> None:
                 trend_score=item.trend_score,
                 observed_at=market.observed_at,
                 closes_at=market.closes_at,
+                source_url=str(market.source_url) if market.source_url else None,
             )
         )
     set_discovery_markets(items)
@@ -228,6 +249,48 @@ def markets(
                 if buckets[venue]:
                     balanced.append(buckets[venue].pop(0))
     return balanced[:limit]
+
+
+@app.get("/api/v1/evidence", response_model=MarketEvidenceResponse)
+def market_evidence(
+    market_id: str = Query(min_length=1, max_length=200),
+) -> MarketEvidenceResponse:
+    market = next((item for item in _DISCOVERY if item.canonical_id == market_id), None)
+    if market is None:
+        raise HTTPException(status_code=404, detail={"missing_market_id": market_id})
+    items: list[EvidenceItem] = []
+    if market.source_url:
+        items.append(
+            EvidenceItem(
+                title=f"Primary venue contract: {market.title}",
+                url=market.source_url,
+                publisher=market.venue.capitalize(),
+                kind=EvidenceKind.VENUE,
+                published_at=None,
+                retrieved_at=market.observed_at,
+                summary="Primary contract page supplied by the prediction-market venue.",
+            )
+        )
+    bundle = EvidenceBundle(market_id=market_id, items=items).deduplicated()
+    max_age = timedelta(hours=72)
+    return MarketEvidenceResponse(
+        market_id=market_id,
+        generated_at=bundle.generated_at,
+        publisher_count=bundle.publisher_count,
+        items=[
+            EvidenceView(
+                evidence_id=item.evidence_id,
+                title=item.title,
+                url=str(item.url),
+                publisher=item.publisher,
+                kind=item.kind.value,
+                freshness=item.freshness(max_age=max_age).value,
+                published_at=item.published_at,
+                retrieved_at=item.retrieved_at,
+            )
+            for item in bundle.items
+        ],
+    )
 
 
 @app.get("/api/v1/compare", response_model=MarketComparison)
