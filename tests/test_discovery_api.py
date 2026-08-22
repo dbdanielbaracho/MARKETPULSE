@@ -226,3 +226,32 @@ def test_outbound_rejects_mismatched_or_untrusted_destination(tmp_path, monkeypa
     )])
     assert client.get("/out/kalshi", params={"market_id": "kalshi:unsafe"}, follow_redirects=False).status_code == 409
     assert client.get("/out/polymarket", params={"market_id": "kalshi:unsafe"}, follow_redirects=False).status_code == 404
+
+
+def test_history_signal_related_and_watchlist(tmp_path, monkeypatch):
+    from datetime import timedelta
+    from app.services.intelligence import MarketSnapshot
+    from app.storage.snapshots import SnapshotStore
+
+    monkeypatch.setenv("MP_DATABASE_PATH", str(tmp_path / "history.db"))
+    now = datetime.now(timezone.utc)
+    set_discovery_markets([
+        DiscoveryMarket(canonical_id="kalshi:history", title="Will inflation fall this year?", venue="kalshi", category="Economy", probability=.72, probability_change=.15, volume_usd=12000, trend_score=88, observed_at=now),
+        DiscoveryMarket(canonical_id="polymarket:related", title="Will inflation fall next year?", venue="polymarket", category="Economy", probability=.61, probability_change=.02, volume_usd=9000, trend_score=70, observed_at=now),
+    ])
+    store = SnapshotStore(str(tmp_path / "history.db"))
+    store.append(MarketSnapshot("kalshi:history", .55, 8000, now - timedelta(hours=2)))
+    store.append(MarketSnapshot("kalshi:history", .72, 12000, now - timedelta(hours=1)))
+
+    history = client.get("/api/v1/market/history", params={"market_id": "kalshi:history", "hours": 24})
+    signal = client.get("/api/v1/market/signal", params={"market_id": "kalshi:history"})
+    related = client.get("/api/v1/market/related", params={"market_id": "kalshi:history"})
+    watchlist = client.get("/watchlist")
+
+    assert history.status_code == 200
+    assert [point["probability"] for point in history.json()] == [.55, .72]
+    assert signal.json()["label"] == "rising_fast"
+    assert signal.json()["reasons"]
+    assert related.json()[0]["canonical_id"] == "polymarket:related"
+    assert watchlist.status_code == 200
+    assert "Your watchlist" in watchlist.text
