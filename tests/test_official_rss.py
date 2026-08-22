@@ -71,6 +71,21 @@ def test_collector_isolates_source_failures():
     asyncio.run(client.aclose())
     assert "fed" in matched
     assert errors == ("Federal Reserve:HTTPStatusError",)
+    assert collector.last_source_item_counts == {"Federal Reserve": 1}
+    assert collector.last_total_item_count == 1
+
+
+def test_collector_reports_zero_for_successful_empty_source():
+    client = httpx.AsyncClient(transport=httpx.MockTransport(lambda request: httpx.Response(200, content=b"<rss><channel /></rss>")))
+    collector = OfficialFeedCollector(sources=(FED,), client=client)
+
+    matched, errors = asyncio.run(collector.collect([]))
+    asyncio.run(client.aclose())
+
+    assert matched == {}
+    assert errors == ()
+    assert collector.last_source_item_counts == {"Federal Reserve": 0}
+    assert collector.last_total_item_count == 0
 
 
 def test_news_feed_requires_allowlisted_article_host_and_three_terms():
