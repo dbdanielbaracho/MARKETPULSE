@@ -48,6 +48,8 @@ def test_openai_draft_uses_structured_output_and_locked_citations():
     assert draft.generator == "openai:gpt-test"
     assert draft.citation_ids == (item.evidence_id,)
     assert responses.kwargs["store"] is False
+    assert responses.kwargs["max_output_tokens"] == 800
+    assert responses.kwargs["reasoning"] == {"effort": "minimal"}
     assert responses.kwargs["text_format"] is AIDraftOutput
     assert "untrusted data" in responses.kwargs["input"][0]["content"]
 
