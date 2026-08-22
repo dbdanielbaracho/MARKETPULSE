@@ -23,7 +23,7 @@ This registry is the scope-control source of truth. A requirement may not disapp
 | MP-017 | TikTok distribution | IN_PROGRESS | fail-closed credential, authorization, country, contract and editorial readiness gates; provider integration pending |
 | MP-018 | Telegram distribution | IN_PROGRESS | fail-closed readiness gate; bot/provider integration pending |
 | MP-019 | WhatsApp distribution where channel policy permits | IN_PROGRESS | fail-closed readiness gate; policy approval and provider integration pending |
-| MP-020 | Outbound router is country/partner/market aware and fail-closed | IN_PROGRESS | first-party market-level outbound endpoint, exact venue/market validation, HTTPS allowlist and new-tab UI implemented; organic clicks work while commercial partner identity remains evidence-gated |
+| MP-020 | Outbound router is country/partner/market aware and fail-closed | IN_PROGRESS | public market-level route eligibility, exact venue/host validation, organic/partner modes and hidden unavailable CTA implemented for US; additional country runtime routing pending |
 | MP-021 | Partner attribution | IN_PROGRESS | durable click context plus signed venue-specific reconciliation intake, click lookup, idempotent partner events and creator aggregation implemented; live partner payload mapping pending |
 | MP-022 | Partner revenue states: pending/approved/payable/paid/reversed etc. | IN_PROGRESS | guarded state machine, HMAC-authenticated webhook, timestamp replay window, idempotent transitions and audit log implemented; live partner credentials/events pending |
 | MP-023 | Revenue dashboard; no unnecessary user-funds accounting | VERIFIED | durable ledger plus protected 0.29.0 dashboard; zero-state and tests prove only partner-reported currency amounts are counted and no user-funds ledger exists |
@@ -39,7 +39,7 @@ This registry is the scope-control source of truth. A requirement may not disapp
 | MP-033 | Global-ready locale/currency/timezone/policy boundaries | IN_PROGRESS | country packs plus explicit US, Brazil and unknown-country policy boundaries; runtime localization pending |
 | MP-034 | Future integration path with broader global platform preserved | VERIFIED | accepted ADR 0001, runtime-checkable MarketFetcher port, normalized domain boundary and regression tests prove new venue adapters require no core rewrite |
 | MP-035 | Final evidence audit: requirement -> code -> config -> test -> result | REQUIRED | release checklist |
-| MP-036 | Every discoverable market has an internal PrediBeacon detail journey before outbound | IN_PROGRESS | detail API/page and card navigation implemented; canonical slug URLs and history chart pending |
+| MP-036 | Every discoverable market has an internal PrediBeacon detail journey before outbound | VERIFIED | stable hash-backed canonical slugs, detail page/API, charts, signals, timeline, related markets and explicit outbound choice implemented |
 | MP-037 | Preserve PrediBeacon while external venue opens separately | IN_PROGRESS | venue CTA uses a new tab with explicit external-platform notice; live browser evidence pending |
 | MP-038 | First-party watchlist without requiring account or custody | VERIFIED | local-browser add/remove and dedicated responsive watchlist implemented; no account or custody required |
 | MP-039 | Shareable market links preserve campaign, creator and channel context | VERIFIED | durable admin-created short links preserve campaign, creator and channel through internal market journey and outbound attribution |
@@ -56,6 +56,7 @@ This registry is the scope-control source of truth. A requirement may not disapp
 | MP-050 | Installable mobile web experience | IN_PROGRESS | web manifest, standalone metadata and bounded same-origin service-worker shell implemented; icons and offline data-state design pending |
 | MP-051 | Commercial API credentials are never stored in plaintext | VERIFIED | one-time pb_live secret issuance, SHA-256 at-rest hashing, protected admin creation, scope checks and quota tests implemented |
 | MP-052 | Partner reconciliation events are authenticated and replay-bounded | VERIFIED | venue-specific HMAC-SHA256 signatures, five-minute timestamp window, exact venue validation, idempotent event IDs and adversarial tests implemented |
+| MP-053 | Every active market is represented in the dynamic sitemap | VERIFIED | canonical market URLs are emitted from the current normalized discovery set with hourly change frequency |
 
 ## Change-control rule
 
