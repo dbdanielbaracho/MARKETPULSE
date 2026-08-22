@@ -10,8 +10,9 @@ def test_admin_page_uses_nonce_and_security_headers():
     assert "localStorage" not in body
     assert "sessionStorage" not in body
     assert "Publish manually" in body
+    assert "Schedule publication" in body
     assert "Rollback" in body
-    assert "Approval never publishes automatically" in body
+    assert "Approved drafts publish only by an explicit release or scheduled action" in body
     assert "/api/v1/admin/publications" in body
     assert response.headers["cache-control"] == "no-store"
     assert "frame-ancestors 'none'" in response.headers["content-security-policy"]
