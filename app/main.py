@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 import asyncio
+import html
+import json
 import os
 from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timezone
 from itertools import groupby
 from pathlib import Path
+from urllib.parse import urlsplit
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, Response
 from pydantic import BaseModel, Field
 
 from app.adapters.kalshi import KalshiAdapter
@@ -19,7 +22,7 @@ from app.services.ingestion import IngestionWorker, RefreshBatch
 from app.services.matching import MarketContractFacts, decide_match
 from app.storage.snapshots import SnapshotStore
 
-APP_VERSION = "0.5.0"
+APP_VERSION = "0.6.0"
 
 
 class DiscoveryMarket(BaseModel):
@@ -93,6 +96,24 @@ def _bounded_seconds(name: str, default: float, minimum: float, maximum: float) 
         raise ValueError(f"{name} must be between {minimum:g} and {maximum:g}")
     return value
 
+
+def _public_base_url() -> str:
+    value = os.getenv(
+        "MP_PUBLIC_BASE_URL",
+        "https://marketpulse-production-aa9f.up.railway.app",
+    ).strip().rstrip("/")
+    parsed = urlsplit(value)
+    if (
+        parsed.scheme != "https"
+        or not parsed.hostname
+        or parsed.username
+        or parsed.password
+        or parsed.path not in ("", "/")
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError("MP_PUBLIC_BASE_URL must be an origin-only HTTPS URL")
+    return value
 
 def _refresh_interval() -> float:
     return _bounded_seconds("MP_REFRESH_INTERVAL_SECONDS", 300, 30, 86_400)
@@ -238,7 +259,45 @@ def compare_markets(
     )
 
 
+@app.get("/robots.txt", response_class=PlainTextResponse)
+def robots() -> str:
+    base = _public_base_url()
+    return f"User-agent: *\\nAllow: /\\nSitemap: {base}/sitemap.xml\\n"
+
+
+@app.get("/sitemap.xml")
+def sitemap() -> Response:
+    base = html.escape(_public_base_url(), quote=True)
+    body = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+        f"<url><loc>{base}/</loc><changefreq>hourly</changefreq></url>"
+        "</urlset>"
+    )
+    return Response(body, media_type="application/xml")
+
+
 @app.get("/", response_class=HTMLResponse)
 def home() -> str:
+    base = _public_base_url()
+    canonical = f"{base}/"
+    structured_data = json.dumps(
+        {
+            "@context": "https://schema.org",
+            "@type": "WebSite",
+            "name": "MarketPulse",
+            "url": canonical,
+            "description": "Prediction market intelligence from public market data.",
+        },
+        separators=(",", ":"),
+    )
+    seo = (
+        f'<link rel="canonical" href="{html.escape(canonical, quote=True)}">'
+        f'<meta property="og:url" content="{html.escape(canonical, quote=True)}">'
+        '<meta property="og:type" content="website">'
+        '<meta property="og:title" content="MarketPulse — Prediction market intelligence">'
+        '<meta property="og:description" content="Discover what public prediction markets are pricing now.">'
+        f'<script type="application/ld+json">{structured_data}</script>'
+    )
     template = Path(__file__).parent / "templates" / "index.html"
-    return template.read_text(encoding="utf-8")
+    return template.read_text(encoding="utf-8").replace("</head>", f"{seo}</head>")
