@@ -8,10 +8,11 @@ from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timedelta, timezone
 from itertools import groupby
 from pathlib import Path
+from secrets import compare_digest
 from urllib.parse import urlsplit
-from typing import Literal
+from typing import Annotated, Literal
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.responses import HTMLResponse, PlainTextResponse, Response
 from pydantic import BaseModel, Field
 
@@ -28,7 +29,7 @@ from app.services.matching import MarketContractFacts, decide_match
 from app.storage.content_queue import ContentQueueStore, PersistenceProbe
 from app.storage.snapshots import SnapshotStore
 
-APP_VERSION = "0.19.0"
+APP_VERSION = "0.20.0"
 
 
 class DiscoveryMarket(BaseModel):
@@ -70,6 +71,22 @@ class MarketComparison(BaseModel):
     equivalent_contracts: bool
     reasons: list[str]
     warning: str
+
+
+class DraftReviewRequest(BaseModel):
+    decision: Literal["approved", "rejected"]
+    reason: str = Field(min_length=3, max_length=500)
+
+
+class AdminDraftView(BaseModel):
+    draft_id: str
+    candidate_id: str
+    headline: str
+    body: str
+    citation_ids: list[str]
+    generator: str
+    state: Literal["pending_review", "approved", "rejected"]
+    created_at: datetime
 
 
 _DISCOVERY: list[DiscoveryMarket] = []
@@ -224,6 +241,25 @@ def _ai_daily_limit() -> int:
     return value
 
 
+
+def _database_path() -> str:
+    return os.getenv("MP_DATABASE_PATH", "/tmp/marketpulse.db")
+
+
+def _admin_review_configured() -> bool:
+    return len(os.getenv("MP_ADMIN_TOKEN", "").strip()) >= 32
+
+
+def _require_admin(
+    token: Annotated[str | None, Header(alias="X-MarketPulse-Admin-Token")] = None,
+) -> None:
+    expected = os.getenv("MP_ADMIN_TOKEN", "").strip()
+    if len(expected) < 32:
+        raise HTTPException(status_code=503, detail="admin review is not configured")
+    if token is None or not compare_digest(token, expected):
+        raise HTTPException(status_code=401, detail="invalid admin credentials")
+
+
 def _evidence_refresh_interval() -> float:
     return _bounded_seconds("MP_EVIDENCE_REFRESH_INTERVAL_SECONDS", 900, 300, 86_400)
 
@@ -334,7 +370,7 @@ def freshness(now: datetime | None = None) -> tuple[str, float | None]:
 async def lifespan(_: FastAPI):
     global _CONTENT_QUEUE_COUNTS, _CONTENT_DRAFT_COUNTS, _AI_DRAFTS_ERROR, _AI_PROVIDER_VERIFIED, _AI_DRAFTS_TODAY, _AI_DAILY_LIMIT_REACHED, _STORAGE_PROBE, _PERSISTENT_STORAGE_CONFIGURED
     flags = RuntimeFlags.from_env()
-    database_path = os.getenv("MP_DATABASE_PATH", "/tmp/marketpulse.db")
+    database_path = _database_path()
     store = SnapshotStore(database_path)
     content_queue = ContentQueueStore(database_path)
     _STORAGE_PROBE = content_queue.record_startup()
@@ -462,8 +498,54 @@ def status() -> dict[str, object]:
             "first_started_at": _STORAGE_PROBE.first_started_at.isoformat() if _STORAGE_PROBE else None,
             "last_started_at": _STORAGE_PROBE.last_started_at.isoformat() if _STORAGE_PROBE else None,
         },
+        "admin_review_configured": _admin_review_configured(),
         "automated_publishing_enabled": RuntimeFlags.from_env().automated_publishing,
     }
+
+
+@app.get("/api/v1/admin/drafts", response_model=list[AdminDraftView], dependencies=[Depends(_require_admin)])
+def admin_drafts(
+    state: Literal["pending_review", "approved", "rejected"] = "pending_review",
+    limit: int = Query(default=50, ge=1, le=100),
+) -> list[AdminDraftView]:
+    drafts = ContentQueueStore(_database_path()).drafts(state, limit)
+    return [
+        AdminDraftView(
+            draft_id=item.draft_id,
+            candidate_id=item.candidate_id,
+            headline=item.headline,
+            body=item.body,
+            citation_ids=list(item.citation_ids),
+            generator=item.generator,
+            state=item.state,
+            created_at=item.created_at,
+        )
+        for item in drafts
+    ]
+
+
+@app.post("/api/v1/admin/drafts/{draft_id}/review", response_model=AdminDraftView, dependencies=[Depends(_require_admin)])
+def review_admin_draft(draft_id: str, request: DraftReviewRequest) -> AdminDraftView:
+    try:
+        item = ContentQueueStore(_database_path()).review_draft(
+            draft_id,
+            request.decision,
+            request.reason,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="draft not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return AdminDraftView(
+        draft_id=item.draft_id,
+        candidate_id=item.candidate_id,
+        headline=item.headline,
+        body=item.body,
+        citation_ids=list(item.citation_ids),
+        generator=item.generator,
+        state=item.state,
+        created_at=item.created_at,
+    )
 
 
 @app.get("/api/v1/markets", response_model=list[DiscoveryMarket])
