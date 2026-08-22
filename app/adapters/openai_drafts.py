@@ -48,7 +48,7 @@ class OpenAIDraftProvider:
             model=self.model,
             store=False,
             max_output_tokens=32,
-            reasoning={"effort": "minimal"},
+            reasoning={"effort": "none"},
             input=[
                 {
                     "role": "system",
@@ -85,7 +85,7 @@ class OpenAIDraftProvider:
             model=self.model,
             store=False,
             max_output_tokens=800,
-            reasoning={"effort": "minimal"},
+            reasoning={"effort": "none"},
             input=[
                 {
                     "role": "system",
