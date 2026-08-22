@@ -92,3 +92,20 @@ Verified at 2026-08-22T03:56Z on application version `0.7.0`.
 - a live Kalshi combined-contract title initially exceeded the evidence label bound; PR #29 added safe label truncation and regression coverage before evidence was accepted
 
 This verifies primary venue evidence only. MP-012 remains IN_PROGRESS until independent news and official-source collectors are connected and source-diversity gates pass in production.
+
+
+## AI provider and durable storage evidence
+
+Verified at 2026-08-22T16:49:59Z on application version `0.16.0`.
+
+- OpenAI draft mode: enabled and explicitly configured.
+- Provider/model: OpenAI `gpt-5.6-luna`.
+- Startup verification: `verified: true`, `error: null`.
+- Daily draft limit: 100; drafts generated today: 0.
+- Automated publishing: disabled.
+- Persistent storage remained writable and retained identity `fcb833b0327b062c3335f8b95e1dd636` across startup counts 9, 10, and 11.
+- Market ingestion remained healthy with 100 Kalshi and 100 Polymarket markets and no refresh errors.
+- PR #43 added fail-closed credential/model verification before the AI worker starts.
+- The first live verification exposed an unsupported reasoning value; PR #44 replaced it with the documented `none` value, passed CI and secret scanning, and the redeploy verified successfully.
+
+This proves provider credentials, model access, fail-closed startup behavior, and volume persistence. It does not complete MP-013: a real AI draft remains blocked until an independent evidence match passes the conservative source-diversity gates.
