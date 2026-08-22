@@ -10,7 +10,7 @@ from itertools import groupby
 from pathlib import Path
 from secrets import compare_digest, token_urlsafe
 from uuid import uuid4
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit
 from typing import Annotated, Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
@@ -30,11 +30,12 @@ from app.services.content_drafts import generate_evidence_brief
 from app.services.ingestion import IngestionWorker, RefreshBatch
 from app.services.matching import MarketContractFacts, decide_match
 from app.services.social_distribution import all_channel_readiness
+from app.storage.campaigns import CampaignLinkStore
 from app.storage.content_queue import ContentQueueStore, PersistenceProbe
 from app.storage.revenue import RevenueStore
 from app.storage.snapshots import SnapshotStore
 
-APP_VERSION = "0.31.0"
+APP_VERSION = "0.32.0"
 
 
 class DiscoveryMarket(BaseModel):
@@ -89,6 +90,22 @@ class MarketSignalResponse(BaseModel):
     label: Literal["rising_fast", "falling_fast", "high_attention", "watching", "insufficient_data"]
     reasons: list[str]
     generated_at: datetime
+
+
+class CampaignLinkRequest(BaseModel):
+    slug: str = Field(min_length=3, max_length=80)
+    market_id: str = Field(min_length=1, max_length=200)
+    creator_id: str | None = Field(default=None, max_length=100)
+    channel: str = Field(min_length=2, max_length=100)
+
+
+class CampaignLinkView(BaseModel):
+    slug: str
+    market_id: str
+    creator_id: str | None
+    channel: str
+    active: bool
+    public_url: str
 
 
 class DraftReviewRequest(BaseModel):
@@ -956,6 +973,64 @@ def market_detail(market_id: str = Query(min_length=1, max_length=200)) -> Disco
     return _market_by_id(market_id)
 
 
+@app.post(
+    "/api/v1/admin/campaign-links",
+    response_model=CampaignLinkView,
+    dependencies=[Depends(_require_admin)],
+)
+def create_campaign_link(payload: CampaignLinkRequest) -> CampaignLinkView:
+    _market_by_id(payload.market_id)
+    try:
+        item = CampaignLinkStore(_database_path()).create(
+            slug=payload.slug,
+            market_id=payload.market_id,
+            creator_id=payload.creator_id,
+            channel=payload.channel,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return CampaignLinkView(
+        slug=item.slug,
+        market_id=item.market_id,
+        creator_id=item.creator_id,
+        channel=item.channel,
+        active=item.active,
+        public_url=f"{_public_base_url()}/go/{item.slug}",
+    )
+
+
+@app.get("/go/{slug}")
+def campaign_entry(slug: str) -> RedirectResponse:
+    item = CampaignLinkStore(_database_path()).get(slug)
+    if item is None:
+        raise HTTPException(status_code=404, detail="campaign link not found")
+    query = {"market_id": item.market_id, "campaign_id": item.slug, "channel": item.channel}
+    if item.creator_id:
+        query["creator_id"] = item.creator_id
+    return RedirectResponse(url=f"/market?{urlencode(query)}", status_code=302)
+
+
+@app.get("/api/v1/creators/{creator_id}/markets")
+def creator_markets(creator_id: str, limit: int = Query(default=50, ge=1, le=100)) -> list[dict[str, object]]:
+    links = CampaignLinkStore(_database_path()).for_creator(creator_id, limit)
+    by_id = {market.canonical_id: market for market in _DISCOVERY}
+    return [
+        {
+            "campaign": CampaignLinkView(
+                slug=item.slug,
+                market_id=item.market_id,
+                creator_id=item.creator_id,
+                channel=item.channel,
+                active=item.active,
+                public_url=f"{_public_base_url()}/go/{item.slug}",
+            ),
+            "market": by_id[item.market_id],
+        }
+        for item in links
+        if item.market_id in by_id
+    ]
+
+
 @app.get("/api/v1/market/history", response_model=list[SnapshotPoint])
 def market_history(
     market_id: str = Query(min_length=1, max_length=200),
@@ -1016,6 +1091,43 @@ def related_markets(
             candidates.append((same_category, overlap, item.trend_score, item))
     candidates.sort(key=lambda entry: (entry[0], entry[1], entry[2]), reverse=True)
     return [entry[3] for entry in candidates[:limit]]
+
+
+@app.get("/top", response_class=HTMLResponse)
+def top_markets_page() -> HTMLResponse:
+    nonce = token_urlsafe(18)
+    template = Path(__file__).parent / "templates" / "top.html"
+    return HTMLResponse(
+        template.read_text(encoding="utf-8").replace("__CSP_NONCE__", nonce),
+        headers={
+            "Cache-Control": "public, max-age=60",
+            "Content-Security-Policy": (
+                "default-src 'none'; "
+                f"script-src 'nonce-{nonce}'; style-src 'nonce-{nonce}'; "
+                "connect-src 'self'; img-src 'none'; font-src 'none'; "
+                "frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+            ),
+        },
+    )
+
+
+@app.get("/creator/{creator_id}", response_class=HTMLResponse)
+def creator_page(creator_id: str) -> HTMLResponse:
+    nonce = token_urlsafe(18)
+    template = Path(__file__).parent / "templates" / "creator.html"
+    body = template.read_text(encoding="utf-8").replace("__CSP_NONCE__", nonce)
+    return HTMLResponse(
+        body,
+        headers={
+            "Cache-Control": "public, max-age=60",
+            "Content-Security-Policy": (
+                "default-src 'none'; "
+                f"script-src 'nonce-{nonce}'; style-src 'nonce-{nonce}'; "
+                "connect-src 'self'; img-src 'none'; font-src 'none'; "
+                "frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+            ),
+        },
+    )
 
 
 @app.get("/watchlist", response_class=HTMLResponse)
