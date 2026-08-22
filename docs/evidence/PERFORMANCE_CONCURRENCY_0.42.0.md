@@ -20,6 +20,10 @@ The existing backup implementation remains based on SQLite's online backup API, 
 
 The budget detects application-level regressions in serialization, routing and middleware. It excludes DNS, TLS, Railway routing, third-party APIs and client rendering. It is not advertised as a public SLA and never sends load to production.
 
+## Verified CI result
+
+GitHub Actions run 603 completed with 166 tests passed. The 240-request smoke gate measured a 3.12 ms median and 4.32 ms p95, comfortably within the 250 ms regression budget. These are in-process CI measurements, not production latency.
+
 ## Release evidence
 
 - `tests/test_e2e_release_journey.py`
