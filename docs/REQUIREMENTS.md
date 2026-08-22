@@ -43,17 +43,18 @@ This registry is the scope-control source of truth. A requirement may not disapp
 | MP-037 | Preserve PrediBeacon while external venue opens separately | IN_PROGRESS | venue CTA uses a new tab with explicit external-platform notice; live browser evidence pending |
 | MP-038 | First-party watchlist without requiring account or custody | VERIFIED | local-browser add/remove and dedicated responsive watchlist implemented; no account or custody required |
 | MP-039 | Shareable market links preserve campaign, creator and channel context | VERIFIED | durable admin-created short links preserve campaign, creator and channel through internal market journey and outbound attribution |
-| MP-040 | Probability history and event timeline | IN_PROGRESS | bounded history API and responsive 24H/7D/30D SVG probability chart implemented; attributable event overlay pending |
-| MP-041 | Explain trend and movement using attributable evidence | IN_PROGRESS | public observational signal API/UI explains change, Trend Score, volume and closing proximity without claiming causation; evidence-event linking pending |
+| MP-040 | Probability history and event timeline | VERIFIED | bounded snapshot history and combined probability/evidence timeline API/UI implemented with timestamps, source links and public chart periods |
+| MP-041 | Explain trend and movement using attributable evidence | VERIFIED | observational signal explanations plus timestamped venue/news/official/research evidence timeline implemented without unsupported causal claims |
 | MP-042 | Alerts for thresholds, material moves, evidence and closing time | IN_PROGRESS | browser-local probability-threshold preferences, permission flow, five-minute active-session checks and notifications implemented; durable background delivery and other trigger types pending |
 | MP-043 | Creator pages, lists, tracked links and paid-revenue-only sharing | IN_PROGRESS | public creator selections, durable campaign links and paid-revenue-only disclosure implemented; creator authentication and payout statements pending |
 | MP-044 | Embeddable widgets remain visibly Powered by PrediBeacon | VERIFIED | responsive iframe widget, visible Powered by PrediBeacon attribution, internal campaign routing and copy-embed action implemented |
 | MP-045 | PrediBeacon Pro subscriptions for advanced intelligence | REQUIRED | product packaging, entitlements and billing pending |
-| MP-046 | Commercial API for normalized data and proprietary signals | REQUIRED | public discovery API exists; authentication, quotas and commercial packaging pending |
+| MP-046 | Commercial API for normalized data and proprietary signals | IN_PROGRESS | hashed one-time API keys, scoped markets/history access, atomic daily quotas and starter/pro/business plan metadata implemented; billing and customer portal pending |
 | MP-047 | PrediBeacon remains a single public brand; white label is excluded | VERIFIED | explicit product-scope decision; no third-party branded instances or reseller mode |
 | MP-048 | Related-market discovery retains users inside PrediBeacon | IN_PROGRESS | conservative title/category related-market API and internal links implemented; contract-equivalence labels pending |
 | MP-049 | Daily Top 10 discovery surfaces trending, movers and volume rankings | VERIFIED | responsive public Top 10 view uses live normalized ranking API and preserves onsite campaign attribution |
 | MP-050 | Installable mobile web experience | IN_PROGRESS | web manifest, standalone metadata and bounded same-origin service-worker shell implemented; icons and offline data-state design pending |
+| MP-051 | Commercial API credentials are never stored in plaintext | VERIFIED | one-time pb_live secret issuance, SHA-256 at-rest hashing, protected admin creation, scope checks and quota tests implemented |
 
 ## Change-control rule
 
