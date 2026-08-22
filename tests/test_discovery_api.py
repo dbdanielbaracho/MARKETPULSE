@@ -171,3 +171,58 @@ def test_market_evidence_combines_primary_and_official_sources(monkeypatch):
     payload = client.get("/api/v1/evidence", params={"market_id": market.canonical_id}).json()
     assert payload["publisher_count"] == 2
     assert {item["kind"] for item in payload["items"]} == {"venue", "official"}
+
+
+def test_market_detail_page_and_api_are_internal():
+    seed()
+    page = client.get("/market", params={"market_id": "kalshi:a"})
+    detail = client.get("/api/v1/market", params={"market_id": "kalshi:a"})
+    assert page.status_code == 200
+    assert "PREDIBEACON" in page.text
+    assert "target=\"_blank\"" in page.text
+    assert detail.status_code == 200
+    assert detail.json()["canonical_id"] == "kalshi:a"
+
+
+def test_outbound_records_click_and_preserves_internal_journey(tmp_path, monkeypatch):
+    monkeypatch.setenv("MP_DATABASE_PATH", str(tmp_path / "revenue.db"))
+    now = datetime(2026, 8, 22, tzinfo=timezone.utc)
+    set_discovery_markets([DiscoveryMarket(
+        canonical_id="kalshi:tracked",
+        title="Tracked market",
+        venue="kalshi",
+        probability=.5,
+        trend_score=70,
+        observed_at=now,
+        source_url="https://kalshi.com/markets/tracked",
+    )])
+    response = client.get(
+        "/out/kalshi",
+        params={"market_id": "kalshi:tracked", "campaign_id": "launch", "creator_id": "daniel", "channel": "tiktok"},
+        headers={"referer": "https://predibeacon.com/market?market_id=kalshi%3Atracked"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
+    assert response.headers["location"] == "https://kalshi.com/markets/tracked"
+    assert response.headers["x-predibeacon-click-id"]
+    from app.storage.revenue import RevenueStore
+    summary = RevenueStore(str(tmp_path / "revenue.db")).summary()
+    assert summary["state_counts"] == {"clicked": 1}
+    assert summary["click_context_count"] == 1
+    assert summary["clicks_by_channel"] == {"tiktok": 1}
+
+
+def test_outbound_rejects_mismatched_or_untrusted_destination(tmp_path, monkeypatch):
+    monkeypatch.setenv("MP_DATABASE_PATH", str(tmp_path / "revenue.db"))
+    now = datetime(2026, 8, 22, tzinfo=timezone.utc)
+    set_discovery_markets([DiscoveryMarket(
+        canonical_id="kalshi:unsafe",
+        title="Unsafe route",
+        venue="kalshi",
+        probability=.5,
+        trend_score=20,
+        observed_at=now,
+        source_url="https://example.com/not-a-market",
+    )])
+    assert client.get("/out/kalshi", params={"market_id": "kalshi:unsafe"}, follow_redirects=False).status_code == 409
+    assert client.get("/out/polymarket", params={"market_id": "kalshi:unsafe"}, follow_redirects=False).status_code == 404
