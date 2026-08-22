@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -330,3 +330,48 @@ def test_publication_requires_reason_and_known_records(tmp_path):
         store.rollback_publication("missing", "editor_rollback", NOW)
     with pytest.raises(ValueError, match="invalid publication state"):
         store.publications("invalid")
+
+
+def test_approved_draft_can_be_scheduled_and_published_when_due(tmp_path):
+    store = ContentQueueStore(tmp_path / "queue.db")
+    bundle = evidence_bundle()
+    store.enqueue(candidate(), bundle, NOW)
+    claimed = store.claim_next(NOW)
+    draft = store.save_draft(
+        claimed.candidate_id,
+        ContentDraft(
+            headline="Scheduled Federal Reserve outlook",
+            body="Evidence-grounded scheduled article.",
+            citation_ids=tuple(item.evidence_id for item in bundle.items),
+        ),
+        NOW,
+    )
+    store.review_draft(draft.draft_id, "approved", "editor_verified", NOW)
+    scheduled_at = NOW + timedelta(hours=1)
+    schedule = store.schedule_publication(draft.draft_id, scheduled_at, "morning_release")
+    duplicate = store.schedule_publication(draft.draft_id, scheduled_at, "morning_release")
+
+    assert duplicate == schedule
+    assert schedule["state"] == "scheduled"
+    assert store.publish_due(NOW) == []
+    assert store.schedule_counts() == {"scheduled": 1}
+
+    results = store.publish_due(scheduled_at)
+    assert results[0]["state"] == "published"
+    assert results[0]["publication_id"]
+    assert store.schedule_counts() == {"published": 1}
+    assert len(store.publications()) == 1
+    assert store.publish_due(scheduled_at + timedelta(minutes=1)) == []
+
+
+def test_schedule_rejects_unapproved_draft_and_naive_time(tmp_path):
+    store = ContentQueueStore(tmp_path / "queue.db")
+    bundle = evidence_bundle()
+    store.enqueue(candidate(), bundle, NOW)
+    claimed = store.claim_next(NOW)
+    draft = store.save_draft(claimed.candidate_id, ContentDraft(headline="Pending", body="Pending", citation_ids=tuple(item.evidence_id for item in bundle.items)), NOW)
+    with pytest.raises(ValueError, match="approved"):
+        store.schedule_publication(draft.draft_id, NOW, "too_early")
+    store.review_draft(draft.draft_id, "approved", "verified", NOW)
+    with pytest.raises(ValueError, match="timezone"):
+        store.schedule_publication(draft.draft_id, datetime(2026, 8, 23), "naive")
