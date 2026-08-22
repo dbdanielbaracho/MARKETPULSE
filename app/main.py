@@ -20,11 +20,13 @@ from app.adapters.official_rss import TrustedFeedCollector
 from app.adapters.polymarket import PolymarketAdapter
 from app.config.runtime import RuntimeFlags
 from app.domain.evidence import EvidenceBundle, EvidenceItem, EvidenceKind
+from app.services.content_queue import ContentDecision, ContentPolicy, classify_content_candidate
 from app.services.ingestion import IngestionWorker, RefreshBatch
 from app.services.matching import MarketContractFacts, decide_match
+from app.storage.content_queue import ContentQueueStore
 from app.storage.snapshots import SnapshotStore
 
-APP_VERSION = "0.9.0"
+APP_VERSION = "0.10.0"
 
 
 class DiscoveryMarket(BaseModel):
@@ -74,6 +76,23 @@ _LAST_REFRESH_ERRORS: tuple[str, ...] = ()
 _EXTERNAL_EVIDENCE: dict[str, list[EvidenceItem]] = {}
 _LAST_EVIDENCE_REFRESH_AT: datetime | None = None
 _LAST_EVIDENCE_ERRORS: tuple[str, ...] = ()
+_CONTENT_QUEUE_COUNTS: dict[str, int] = {}
+
+
+def _evidence_bundle(market: DiscoveryMarket) -> EvidenceBundle:
+    items: list[EvidenceItem] = []
+    if market.source_url:
+        items.append(EvidenceItem(
+            title=f"Primary venue contract: {market.title}"[:300].rstrip(),
+            url=market.source_url,
+            publisher=market.venue.capitalize(),
+            kind=EvidenceKind.VENUE,
+            published_at=None,
+            retrieved_at=market.observed_at,
+            summary="Primary contract page supplied by the prediction-market venue.",
+        ))
+    items.extend(_EXTERNAL_EVIDENCE.get(market.canonical_id, ()))
+    return EvidenceBundle(market_id=market.canonical_id, items=items).deduplicated()
 
 
 def set_discovery_markets(markets: list[DiscoveryMarket]) -> None:
@@ -149,12 +168,21 @@ def _official_evidence_enabled() -> bool:
     raise ValueError("MP_OFFICIAL_EVIDENCE must be boolean")
 
 
+def _content_candidates_enabled() -> bool:
+    value = os.getenv("MP_CONTENT_CANDIDATES", "true").strip().casefold()
+    if value in {"1", "true", "yes", "on"}:
+        return True
+    if value in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError("MP_CONTENT_CANDIDATES must be boolean")
+
+
 def _evidence_refresh_interval() -> float:
     return _bounded_seconds("MP_EVIDENCE_REFRESH_INTERVAL_SECONDS", 900, 300, 86_400)
 
 
-async def run_external_evidence_forever(stop: asyncio.Event) -> None:
-    global _EXTERNAL_EVIDENCE, _LAST_EVIDENCE_REFRESH_AT, _LAST_EVIDENCE_ERRORS
+async def run_external_evidence_forever(stop: asyncio.Event, queue: ContentQueueStore) -> None:
+    global _EXTERNAL_EVIDENCE, _LAST_EVIDENCE_REFRESH_AT, _LAST_EVIDENCE_ERRORS, _CONTENT_QUEUE_COUNTS
     collector = TrustedFeedCollector()
     while not stop.is_set():
         if _DISCOVERY:
@@ -162,6 +190,20 @@ async def run_external_evidence_forever(stop: asyncio.Event) -> None:
             _EXTERNAL_EVIDENCE = matched
             _LAST_EVIDENCE_ERRORS = errors
             _LAST_EVIDENCE_REFRESH_AT = datetime.now(timezone.utc)
+            if _content_candidates_enabled():
+                policy = ContentPolicy()
+                for market in _DISCOVERY:
+                    if market.canonical_id not in matched:
+                        continue
+                    candidate = classify_content_candidate(
+                        market_id=market.canonical_id,
+                        score=market.trend_score,
+                        evidence=_evidence_bundle(market),
+                        policy=policy,
+                    )
+                    if candidate.decision != ContentDecision.REJECT:
+                        queue.enqueue(candidate)
+                _CONTENT_QUEUE_COUNTS = queue.counts()
             delay = _evidence_refresh_interval()
         else:
             delay = 10
@@ -193,7 +235,9 @@ def freshness(now: datetime | None = None) -> tuple[str, float | None]:
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     flags = RuntimeFlags.from_env()
-    store = SnapshotStore(os.getenv("MP_DATABASE_PATH", "/tmp/marketpulse.db"))
+    database_path = os.getenv("MP_DATABASE_PATH", "/tmp/marketpulse.db")
+    store = SnapshotStore(database_path)
+    content_queue = ContentQueueStore(database_path)
     worker = IngestionWorker(
         store=store,
         flags=flags,
@@ -212,7 +256,7 @@ async def lifespan(_: FastAPI):
         )
     ]
     if _official_evidence_enabled():
-        tasks.append(asyncio.create_task(run_external_evidence_forever(stop), name="marketpulse-external-evidence"))
+        tasks.append(asyncio.create_task(run_external_evidence_forever(stop, content_queue), name="marketpulse-external-evidence"))
     try:
         yield
     finally:
@@ -266,6 +310,9 @@ def status() -> dict[str, object]:
             if item.kind == EvidenceKind.NEWS
         ),
         "external_evidence_market_count": len(_EXTERNAL_EVIDENCE),
+        "content_candidates_enabled": _content_candidates_enabled(),
+        "content_queue_counts": _CONTENT_QUEUE_COUNTS,
+        "automated_publishing_enabled": RuntimeFlags.from_env().automated_publishing,
     }
 
 
@@ -311,21 +358,7 @@ def market_evidence(
     market = next((item for item in _DISCOVERY if item.canonical_id == market_id), None)
     if market is None:
         raise HTTPException(status_code=404, detail={"missing_market_id": market_id})
-    items: list[EvidenceItem] = []
-    if market.source_url:
-        items.append(
-            EvidenceItem(
-                title=f"Primary venue contract: {market.title}"[:300].rstrip(),
-                url=market.source_url,
-                publisher=market.venue.capitalize(),
-                kind=EvidenceKind.VENUE,
-                published_at=None,
-                retrieved_at=market.observed_at,
-                summary="Primary contract page supplied by the prediction-market venue.",
-            )
-        )
-    items.extend(_EXTERNAL_EVIDENCE.get(market_id, ()))
-    bundle = EvidenceBundle(market_id=market_id, items=items).deduplicated()
+    bundle = _evidence_bundle(market)
     max_age = timedelta(hours=72)
     return MarketEvidenceResponse(
         market_id=market_id,
