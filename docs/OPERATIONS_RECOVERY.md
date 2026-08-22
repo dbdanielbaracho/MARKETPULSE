@@ -13,7 +13,7 @@ PrediBeacon is informational and outbound-only. Keep social distribution, paid p
 
 ## Database backup
 
-The production SQLite database must live on the mounted `/data` volume. Take a filesystem snapshot or use SQLite's online backup facility while the application remains running. Never copy only the WAL file. Retain the database, WAL and SHM together when performing a cold filesystem copy.
+The production SQLite database must live on the mounted `/data` volume. The application performs an online backup at worker startup and every 24 hours when the database is on `/data` and `MP_DATABASE_BACKUPS=true`. Copies are integrity-checked before they count as successful and retention defaults to seven. Operators can trigger a verified copy through the protected `POST /api/v1/admin/database/backups` endpoint and check the active database with `GET /api/v1/admin/database/integrity`. Never copy only the WAL file. Retain the database, WAL and SHM together when performing a cold filesystem copy.
 
 Verify every backup by opening it read-only, running `PRAGMA integrity_check`, and confirming expected tables and row counts. Keep at least one recovery copy outside the active Railway volume.
 
