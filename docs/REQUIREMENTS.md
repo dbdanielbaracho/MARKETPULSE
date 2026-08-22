@@ -29,11 +29,11 @@ This registry is the scope-control source of truth. A requirement may not disapp
 | MP-023 | Revenue dashboard; no unnecessary user-funds accounting | REQUIRED | dashboard/reconciliation |
 | MP-024 | Mobile-first, simple, accessible website | IN_PROGRESS | dynamic baseline UI; usability/accessibility audit pending |
 | MP-025 | Search and category discovery | VERIFIED | deployed API/UI filters with production evidence in `docs/LIVE_EVIDENCE.md` |
-| MP-026 | Freshness displayed honestly; never claim live without evidence | IN_PROGRESS | timestamp UI + evidence freshness states (fresh/stale/future/undated); E2E stale-state pending |
+| MP-026 | Freshness displayed honestly; never claim live without evidence | IN_PROGRESS | explicit fresh/stale/future/unavailable API and UI; CI/live evidence pending |
 | MP-027 | GitHub PR + CI gates | VERIFIED | repository workflow |
 | MP-028 | Railway staging with deterministic healthcheck | VERIFIED | Docker deployment + /health |
 | MP-029 | Secrets never committed | VERIFIED | pinned Gitleaks CI gate scans full Git history on pushes and PRs |
-| MP-030 | Observability, retries, timeouts, rate-limit handling | IN_PROGRESS | transient-only retries for 429/5xx/network, bounded timeouts, structured refresh logs/status and failure isolation; metrics dashboard pending |
+| MP-030 | Observability, retries, timeouts, rate-limit handling | IN_PROGRESS | retries/timeouts plus freshness, age, venue counts and errors in status; operational dashboard pending |
 | MP-031 | Feature flags and kill switches for external venues/publishing | VERIFIED | fail-closed runtime flags + worker enforcement + tests |
 | MP-032 | Partner economics never invented; require evidence/config | IN_PROGRESS | router requires commercial_verified; commission amount absent unless supplied by partner evidence; config validation pending |
 | MP-033 | Global-ready locale/currency/timezone/policy boundaries | IN_PROGRESS | country packs; runtime localization pending |
