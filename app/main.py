@@ -30,7 +30,7 @@ from app.services.matching import MarketContractFacts, decide_match
 from app.storage.content_queue import ContentQueueStore, PersistenceProbe
 from app.storage.snapshots import SnapshotStore
 
-APP_VERSION = "0.25.0"
+APP_VERSION = "0.26.0"
 
 
 class DiscoveryMarket(BaseModel):
@@ -821,6 +821,42 @@ def compare_markets(
             else "Contract facts passed the equivalence gate."
         ),
     )
+
+
+def _public_static_page(name: str) -> HTMLResponse:
+    allowed = {"methodology", "risk", "privacy", "terms"}
+    if name not in allowed:
+        raise HTTPException(status_code=404, detail="page not found")
+    template = Path(__file__).parent / "templates" / f"{name}.html"
+    return HTMLResponse(
+        template.read_text(encoding="utf-8"),
+        headers={
+            "Cache-Control": "public, max-age=300",
+            "Referrer-Policy": "strict-origin-when-cross-origin",
+            "X-Content-Type-Options": "nosniff",
+            "X-Frame-Options": "DENY",
+        },
+    )
+
+
+@app.get("/methodology", response_class=HTMLResponse)
+def methodology_page() -> HTMLResponse:
+    return _public_static_page("methodology")
+
+
+@app.get("/risk", response_class=HTMLResponse)
+def risk_page() -> HTMLResponse:
+    return _public_static_page("risk")
+
+
+@app.get("/privacy", response_class=HTMLResponse)
+def privacy_page() -> HTMLResponse:
+    return _public_static_page("privacy")
+
+
+@app.get("/terms", response_class=HTMLResponse)
+def terms_page() -> HTMLResponse:
+    return _public_static_page("terms")
 
 
 @app.get("/robots.txt", response_class=PlainTextResponse)
