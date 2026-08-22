@@ -5,6 +5,8 @@ import random
 from dataclasses import dataclass
 from typing import Awaitable, Callable, TypeVar
 
+import httpx
+
 T = TypeVar("T")
 
 
@@ -21,13 +23,30 @@ class RetryPolicy:
             raise ValueError("invalid retry delays")
 
 
-async def with_retry(operation: Callable[[], Awaitable[T]], policy: RetryPolicy = RetryPolicy()) -> T:
+def is_transient_http_error(exc: Exception) -> bool:
+    """Retry network failures, timeouts, rate limits and server errors—not permanent 4xx."""
+    if isinstance(exc, (httpx.TimeoutException, httpx.NetworkError, TimeoutError, ConnectionError)):
+        return True
+    if isinstance(exc, httpx.HTTPStatusError):
+        status = exc.response.status_code
+        return status == 429 or status >= 500
+    return False
+
+
+async def with_retry(
+    operation: Callable[[], Awaitable[T]],
+    policy: RetryPolicy = RetryPolicy(),
+    *,
+    should_retry: Callable[[Exception], bool] | None = None,
+) -> T:
     last_error: Exception | None = None
     for attempt in range(policy.attempts):
         try:
             return await operation()
         except Exception as exc:
             last_error = exc
+            if should_retry is not None and not should_retry(exc):
+                raise
             if attempt == policy.attempts - 1:
                 break
             cap = min(policy.base_delay_seconds * (2**attempt), policy.max_delay_seconds)
