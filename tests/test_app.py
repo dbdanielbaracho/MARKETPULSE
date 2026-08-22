@@ -28,6 +28,7 @@ def test_home_has_accessible_discovery_controls():
     assert 'href="#main"' in response.text
     assert 'type="search"' in response.text
     assert 'aria-live="polite"' in response.text
+    assert 'data-evidence-id' in response.text
 
 
 def test_seo_endpoints_and_canonical_are_consistent():
