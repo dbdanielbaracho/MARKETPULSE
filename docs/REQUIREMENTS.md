@@ -23,11 +23,11 @@ This registry is the scope-control source of truth. A requirement may not disapp
 | MP-017 | TikTok distribution | IN_PROGRESS | fail-closed credential, authorization, country, contract and editorial readiness gates; provider integration pending |
 | MP-018 | Telegram distribution | IN_PROGRESS | fail-closed readiness gate; bot/provider integration pending |
 | MP-019 | WhatsApp distribution where channel policy permits | IN_PROGRESS | fail-closed readiness gate; policy approval and provider integration pending |
-| MP-020 | Outbound router is country/partner/market aware and fail-closed | IN_PROGRESS | server-side route IDs, HTTPS allowlist, commercial verification and public country-policy gate; all US/BR commercial actions remain disabled until written authorization; market-level eligibility/UI pending |
-| MP-021 | Partner attribution | IN_PROGRESS | durable idempotent click ledger and audit history implemented; commercial intake remains disabled and partner adapter pending |
+| MP-020 | Outbound router is country/partner/market aware and fail-closed | IN_PROGRESS | first-party market-level outbound endpoint, exact venue/market validation, HTTPS allowlist and new-tab UI implemented; organic clicks work while commercial partner identity remains evidence-gated |
+| MP-021 | Partner attribution | IN_PROGRESS | durable click ledger now captures market, campaign, creator, channel and referrer before redirect; partner conversion adapter remains pending |
 | MP-022 | Partner revenue states: pending/approved/payable/paid/reversed etc. | IN_PROGRESS | guarded state machine plus durable idempotent partner-event transitions and audit log; live partner reconciliation pending |
 | MP-023 | Revenue dashboard; no unnecessary user-funds accounting | VERIFIED | durable ledger plus protected 0.29.0 dashboard; zero-state and tests prove only partner-reported currency amounts are counted and no user-funds ledger exists |
-| MP-024 | Mobile-first, simple, accessible website | VERIFIED | responsive UI and trust pages; live 0.28.1 DOM audit confirmed language/title/main/h1/skip link, explicit field names, 44px targets, focus rule, unique IDs and no horizontal overflow |
+| MP-024 | Mobile-first, simple, accessible website | IN_PROGRESS | discovery cards now open an internal market journey with responsive detail view, local watchlist, sharing and explicit external-new-tab CTA; production usability evidence pending |
 | MP-025 | Search and category discovery | VERIFIED | deployed API/UI filters with production evidence in `docs/LIVE_EVIDENCE.md` |
 | MP-026 | Freshness displayed honestly; never claim live without evidence | VERIFIED | bounded freshness states, UI banner, tests and live Railway evidence |
 | MP-027 | GitHub PR + CI gates | VERIFIED | repository workflow |
@@ -39,6 +39,18 @@ This registry is the scope-control source of truth. A requirement may not disapp
 | MP-033 | Global-ready locale/currency/timezone/policy boundaries | IN_PROGRESS | country packs plus explicit US, Brazil and unknown-country policy boundaries; runtime localization pending |
 | MP-034 | Future integration path with broader global platform preserved | VERIFIED | accepted ADR 0001, runtime-checkable MarketFetcher port, normalized domain boundary and regression tests prove new venue adapters require no core rewrite |
 | MP-035 | Final evidence audit: requirement -> code -> config -> test -> result | REQUIRED | release checklist |
+| MP-036 | Every discoverable market has an internal PrediBeacon detail journey before outbound | IN_PROGRESS | detail API/page and card navigation implemented; canonical slug URLs and history chart pending |
+| MP-037 | Preserve PrediBeacon while external venue opens separately | IN_PROGRESS | venue CTA uses a new tab with explicit external-platform notice; live browser evidence pending |
+| MP-038 | First-party watchlist without requiring account or custody | IN_PROGRESS | local-browser add/remove implemented; dedicated watchlist view and sync pending |
+| MP-039 | Shareable market links preserve campaign, creator and channel context | IN_PROGRESS | detail sharing and outbound context persistence implemented; campaign link builder pending |
+| MP-040 | Probability history and event timeline | REQUIRED | snapshot data exists; public chart/timeline pending |
+| MP-041 | Explain trend and movement using attributable evidence | REQUIRED | trend/evidence foundations exist; public explanation component pending |
+| MP-042 | Alerts for thresholds, material moves, evidence and closing time | REQUIRED | notification preference and delivery workers pending |
+| MP-043 | Creator pages, lists, tracked links and paid-revenue-only sharing | REQUIRED | attribution fields exist; creator product pending |
+| MP-044 | Embeddable widgets remain visibly Powered by PrediBeacon | REQUIRED | widget API and embed pending |
+| MP-045 | PrediBeacon Pro subscriptions for advanced intelligence | REQUIRED | product packaging, entitlements and billing pending |
+| MP-046 | Commercial API for normalized data and proprietary signals | REQUIRED | public discovery API exists; authentication, quotas and commercial packaging pending |
+| MP-047 | PrediBeacon remains a single public brand; white label is excluded | VERIFIED | explicit product-scope decision; no third-party branded instances or reseller mode |
 
 ## Change-control rule
 

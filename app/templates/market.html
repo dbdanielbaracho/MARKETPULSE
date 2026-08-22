@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="Explore prediction-market probability, movement, timing and venue details with PrediBeacon.">
+<title>Market details — PrediBeacon</title>
+<style nonce="__CSP_NONCE__">
+:root{font-family:Inter,ui-sans-serif,system-ui,sans-serif;color-scheme:dark;--bg:#090d14;--panel:#111827;--line:#273244;--muted:#aab4c3;--text:#f8fafc;--accent:#8be9c7}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text)}a{color:inherit}.wrap{width:min(900px,calc(100% - 2rem));margin:auto}
+header{border-bottom:1px solid var(--line);padding:1.25rem 0}.brand{font-weight:800;text-decoration:none}.back{color:var(--muted);text-decoration:none}
+main{padding:3rem 0}.eyebrow{color:var(--accent);font-weight:800;text-transform:uppercase}.panel{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:clamp(1.2rem,4vw,2rem);margin:1.25rem 0}
+h1{font-size:clamp(2rem,6vw,3.7rem);line-height:1.06}.prob{font-size:clamp(3rem,10vw,5rem);font-weight:900;margin:.5rem 0}.muted{color:var(--muted);line-height:1.6}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem}.stat{border:1px solid var(--line);border-radius:12px;padding:1rem}.stat strong{display:block;font-size:1.25rem;margin-top:.35rem}
+.actions{display:flex;gap:.75rem;flex-wrap:wrap;margin-top:1.5rem}.button{border-radius:12px;padding:.9rem 1.1rem;text-decoration:none;font-weight:800;min-height:48px;display:inline-flex;align-items:center}
+.primary{background:var(--accent);color:var(--bg)}.secondary{border:1px solid var(--line)}.notice{font-size:.88rem;color:var(--muted)}
+@media(max-width:650px){.stats{grid-template-columns:1fr}.actions{display:grid}.button{justify-content:center}}
+</style></head><body>
+<header><div class="wrap"><a class="brand" href="/">PREDIBEACON</a></div></header>
+<main class="wrap">
+<a class="back" href="/">← Back to trending markets</a>
+<div id="state" class="panel">Loading market details…</div>
+<article id="market" hidden>
+<div class="eyebrow" id="venue"></div><h1 id="title"></h1>
+<section class="panel"><div class="prob" id="probability"></div><p class="muted" id="move"></p>
+<div class="stats"><div class="stat"><span class="muted">Trend score</span><strong id="trend"></strong></div>
+<div class="stat"><span class="muted">Volume</span><strong id="volume"></strong></div>
+<div class="stat"><span class="muted">Closes</span><strong id="closes"></strong></div></div>
+<div class="actions"><a class="button primary" id="outbound" target="_blank" rel="noopener noreferrer">View on platform ↗</a>
+<button class="button secondary" id="watch" type="button">Add to watchlist</button>
+<button class="button secondary" id="share" type="button">Share market</button></div>
+<p class="notice">The external platform opens in a new tab. PrediBeacon records the referral but does not execute trades or hold customer funds.</p></section>
+<section class="panel"><h2>Why this market matters</h2><p class="muted">PrediBeacon surfaces this market based on movement, activity and recency. Probability is market data, not a guaranteed outcome.</p></section>
+</article></main>
+<script nonce="__CSP_NONCE__">
+const qs=new URLSearchParams(location.search),id=qs.get('market_id'),state=document.querySelector('#state'),article=document.querySelector('#market');
+const escText=(el,value)=>{el.textContent=value};
+function watchlist(){try{return JSON.parse(localStorage.getItem('predibeacon-watchlist')||'[]')}catch{return[]}}
+function updateWatch(){const list=watchlist(),button=document.querySelector('#watch');button.textContent=list.includes(id)?'Remove from watchlist':'Add to watchlist'}
+async function load(){if(!id){state.textContent='Market identifier is missing.';return}try{const r=await fetch('/api/v1/market?'+new URLSearchParams({market_id:id}));if(!r.ok)throw new Error();const m=await r.json();
+document.title=m.title+' — PrediBeacon';escText(document.querySelector('#venue'),m.venue);escText(document.querySelector('#title'),m.title);
+escText(document.querySelector('#probability'),m.probability==null?'Probability unavailable':Math.round(m.probability*100)+'%');
+escText(document.querySelector('#move'),m.probability_change==null?'Recent change unavailable':(m.probability_change>=0?'▲ ':'▼ ')+Math.abs(m.probability_change*100).toFixed(1)+' points');
+escText(document.querySelector('#trend'),Math.round(m.trend_score)+'/100');escText(document.querySelector('#volume'),m.volume_usd==null?'Unavailable':new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',notation:'compact'}).format(m.volume_usd));
+escText(document.querySelector('#closes'),m.closes_at?new Date(m.closes_at).toLocaleString():'Not published');
+const campaign=qs.get('campaign_id'),creator=qs.get('creator_id'),channel=qs.get('channel');const out=new URLSearchParams({market_id:id});if(campaign)out.set('campaign_id',campaign);if(creator)out.set('creator_id',creator);if(channel)out.set('channel',channel);
+const outbound=document.querySelector('#outbound');outbound.href='/out/'+m.venue+'?'+out;outbound.textContent='View on '+(m.venue==='kalshi'?'Kalshi':'Polymarket')+' ↗';
+state.hidden=true;article.hidden=false;updateWatch()}catch{state.textContent='Market details are temporarily unavailable.'}}
+document.querySelector('#watch').addEventListener('click',()=>{let list=watchlist();list=list.includes(id)?list.filter(x=>x!==id):[...list,id];localStorage.setItem('predibeacon-watchlist',JSON.stringify(list));updateWatch()});
+document.querySelector('#share').addEventListener('click',async()=>{const data={title:document.title,url:location.href};if(navigator.share){await navigator.share(data)}else{await navigator.clipboard.writeText(location.href);document.querySelector('#share').textContent='Link copied'}});
+load();
+</script></body></html>

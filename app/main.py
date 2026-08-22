@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 from itertools import groupby
 from pathlib import Path
 from secrets import compare_digest, token_urlsafe
+from uuid import uuid4
 from urllib.parse import urlsplit
 from typing import Annotated, Literal
 
@@ -22,6 +23,7 @@ from app.adapters.openai_drafts import OpenAIDraftProvider
 from app.adapters.polymarket import PolymarketAdapter
 from app.config.runtime import RuntimeFlags
 from app.domain.evidence import EvidenceBundle, EvidenceItem, EvidenceKind
+from app.domain.revenue import AttributionRecord
 from app.services.content_queue import ContentDecision, ContentPolicy, classify_content_candidate
 from app.services.country_policy import resolve_country_policy
 from app.services.content_drafts import generate_evidence_brief
@@ -32,7 +34,7 @@ from app.storage.content_queue import ContentQueueStore, PersistenceProbe
 from app.storage.revenue import RevenueStore
 from app.storage.snapshots import SnapshotStore
 
-APP_VERSION = "0.29.1"
+APP_VERSION = "0.30.0"
 
 
 class DiscoveryMarket(BaseModel):
@@ -926,6 +928,94 @@ def compare_markets(
             if not equivalent
             else "Contract facts passed the equivalence gate."
         ),
+    )
+
+
+def _market_by_id(market_id: str) -> DiscoveryMarket:
+    market = next((item for item in _DISCOVERY if item.canonical_id == market_id), None)
+    if market is None:
+        raise HTTPException(status_code=404, detail="market not found")
+    return market
+
+
+@app.get("/api/v1/market", response_model=DiscoveryMarket)
+def market_detail(market_id: str = Query(min_length=1, max_length=200)) -> DiscoveryMarket:
+    return _market_by_id(market_id)
+
+
+@app.get("/market", response_class=HTMLResponse)
+def market_page() -> HTMLResponse:
+    nonce = token_urlsafe(18)
+    template = Path(__file__).parent / "templates" / "market.html"
+    body = template.read_text(encoding="utf-8").replace("__CSP_NONCE__", nonce)
+    return HTMLResponse(
+        body,
+        headers={
+            "Cache-Control": "public, max-age=60",
+            "Content-Security-Policy": (
+                "default-src 'none'; "
+                f"script-src 'nonce-{nonce}'; style-src 'nonce-{nonce}'; "
+                "connect-src 'self'; img-src 'none'; font-src 'none'; "
+                "frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+            ),
+            "Referrer-Policy": "strict-origin-when-cross-origin",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+@app.get("/out/{venue}")
+def outbound_redirect(
+    venue: Literal["kalshi", "polymarket"],
+    request: Request,
+    market_id: str = Query(min_length=1, max_length=200),
+    campaign_id: str | None = Query(default=None, max_length=100),
+    creator_id: str | None = Query(default=None, max_length=100),
+    channel: str | None = Query(default=None, max_length=50),
+) -> RedirectResponse:
+    """Record an owned first-party click before sending the visitor to a venue.
+
+    Commission remains unknown until a partner reports and reconciles it.
+    Destination URLs come only from the ingested server-side market record.
+    """
+    market = _market_by_id(market_id)
+    if market.venue != venue or not market.source_url:
+        raise HTTPException(status_code=404, detail="outbound route unavailable")
+    parsed = urlsplit(market.source_url)
+    allowed_hosts = {
+        "kalshi": {"kalshi.com", "www.kalshi.com"},
+        "polymarket": {"polymarket.com", "www.polymarket.com"},
+    }
+    if parsed.scheme != "https" or (parsed.hostname or "").lower() not in allowed_hosts[venue]:
+        raise HTTPException(status_code=409, detail="unverified destination")
+
+    click_id = token_urlsafe(18)
+    attribution_id = str(uuid4())
+    commercial_verified = os.getenv(
+        f"MP_{venue.upper()}_COMMERCIAL_VERIFIED", "false"
+    ).strip().casefold() in {"1", "true", "yes", "on"}
+    configured_partner = os.getenv(f"MP_{venue.upper()}_PARTNER_ID", "").strip()
+    partner_id = configured_partner if commercial_verified and configured_partner else f"{venue}-organic"
+    store = RevenueStore(_database_path())
+    store.record_click(AttributionRecord(
+        attribution_id=attribution_id,
+        click_id=click_id,
+        partner_id=partner_id,
+        venue=venue,
+        country="US",
+    ))
+    store.record_click_context(
+        click_id=click_id,
+        market_id=market_id,
+        campaign_id=campaign_id,
+        creator_id=creator_id,
+        channel=channel,
+        referrer=request.headers.get("referer"),
+    )
+    return RedirectResponse(
+        market.source_url,
+        status_code=302,
+        headers={"Cache-Control": "no-store", "X-PrediBeacon-Click-ID": click_id},
     )
 
 
