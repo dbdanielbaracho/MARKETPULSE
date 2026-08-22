@@ -29,7 +29,7 @@ from app.services.matching import MarketContractFacts, decide_match
 from app.storage.content_queue import ContentQueueStore, PersistenceProbe
 from app.storage.snapshots import SnapshotStore
 
-APP_VERSION = "0.22.0"
+APP_VERSION = "0.23.0"
 
 
 class DiscoveryMarket(BaseModel):
@@ -87,6 +87,24 @@ class AdminDraftView(BaseModel):
     generator: str
     state: Literal["pending_review", "approved", "rejected"]
     created_at: datetime
+
+
+class PublicationActionRequest(BaseModel):
+    reason: str = Field(min_length=3, max_length=500)
+
+
+class PublicationView(BaseModel):
+    publication_id: str
+    draft_id: str
+    article_key: str
+    slug: str
+    version: int
+    headline: str
+    body: str
+    citation_ids: list[str]
+    state: Literal["active", "rolled_back"]
+    published_at: datetime
+    rolled_back_at: datetime | None
 
 
 _DISCOVERY: list[DiscoveryMarket] = []
@@ -499,6 +517,7 @@ def status() -> dict[str, object]:
             "last_started_at": _STORAGE_PROBE.last_started_at.isoformat() if _STORAGE_PROBE else None,
         },
         "admin_review_configured": _admin_review_configured(),
+        "content_publication_counts": ContentQueueStore(_database_path()).publication_counts(),
         "automated_publishing_enabled": RuntimeFlags.from_env().automated_publishing,
     }
 
@@ -568,6 +587,115 @@ def review_admin_draft(draft_id: str, request: DraftReviewRequest) -> AdminDraft
         generator=item.generator,
         state=item.state,
         created_at=item.created_at,
+    )
+
+
+def _publication_view(item) -> PublicationView:
+    return PublicationView(
+        publication_id=item.publication_id,
+        draft_id=item.draft_id,
+        article_key=item.article_key,
+        slug=item.slug,
+        version=item.version,
+        headline=item.headline,
+        body=item.body,
+        citation_ids=list(item.citation_ids),
+        state=item.state,
+        published_at=item.published_at,
+        rolled_back_at=item.rolled_back_at,
+    )
+
+
+@app.post(
+    "/api/v1/admin/drafts/{draft_id}/publish",
+    response_model=PublicationView,
+    dependencies=[Depends(_require_admin)],
+)
+def publish_admin_draft(draft_id: str, request: PublicationActionRequest) -> PublicationView:
+    try:
+        item = ContentQueueStore(_database_path()).publish_draft(draft_id, request.reason)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="draft not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return _publication_view(item)
+
+
+@app.post(
+    "/api/v1/admin/publications/{publication_id}/rollback",
+    response_model=PublicationView,
+    dependencies=[Depends(_require_admin)],
+)
+def rollback_admin_publication(
+    publication_id: str,
+    request: PublicationActionRequest,
+) -> PublicationView:
+    try:
+        item = ContentQueueStore(_database_path()).rollback_publication(
+            publication_id,
+            request.reason,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="publication not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return _publication_view(item)
+
+
+@app.get("/api/v1/articles", response_model=list[PublicationView])
+def published_articles(limit: int = Query(default=20, ge=1, le=100)) -> list[PublicationView]:
+    return [
+        _publication_view(item)
+        for item in ContentQueueStore(_database_path()).publications("active", limit)
+    ]
+
+
+@app.get("/articles", response_class=HTMLResponse)
+def article_index() -> HTMLResponse:
+    items = ContentQueueStore(_database_path()).publications("active", 100)
+    cards = "".join(
+        f'<article><h2><a href="/articles/{html.escape(item.slug, quote=True)}">'
+        f'{html.escape(item.headline)}</a></h2>'
+        f'<p>Published {html.escape(item.published_at.isoformat())} · version {item.version}</p></article>'
+        for item in items
+    ) or "<p>No editorial briefs have been published yet.</p>"
+    return HTMLResponse(
+        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
+        "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+        "<title>PrediBeacon — Editorial briefs</title></head><body>"
+        "<main><p><a href=\"/\">PrediBeacon</a></p><h1>Editorial briefs</h1>"
+        f"{cards}</main></body></html>",
+        headers={"Cache-Control": "public, max-age=60"},
+    )
+
+
+@app.get("/articles/{slug}", response_class=HTMLResponse)
+def article_page(slug: str) -> HTMLResponse:
+    store = ContentQueueStore(_database_path())
+    item = store.publication(slug)
+    if item is None:
+        raise HTTPException(status_code=404, detail="article not found")
+    evidence = {source.evidence_id: source for source in store.publication_evidence(item.publication_id)}
+    citations = "".join(
+        f'<li><a href="{html.escape(str(evidence[identifier].url), quote=True)}" '
+        'rel="noopener noreferrer">'
+        f'{html.escape(evidence[identifier].publisher)} — '
+        f'{html.escape(evidence[identifier].title)}</a></li>'
+        for identifier in item.citation_ids
+        if identifier in evidence
+    )
+    body = "<br>".join(html.escape(item.body).splitlines())
+    return HTMLResponse(
+        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
+        "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+        f"<title>{html.escape(item.headline)} — PrediBeacon</title></head><body>"
+        "<main><p><a href=\"/articles\">Editorial briefs</a></p>"
+        f"<article><h1>{html.escape(item.headline)}</h1>"
+        f"<p>Version {item.version} · Published {html.escape(item.published_at.isoformat())}</p>"
+        f"<div>{body}</div><h2>Sources</h2><ol>{citations}</ol>"
+        "<p>Prediction-market prices can change and are not financial advice.</p>"
+        "</article></main></body></html>",
+        headers={"Cache-Control": "public, max-age=60"},
     )
 
 
