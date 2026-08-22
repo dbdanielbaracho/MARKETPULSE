@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 _SLUG = re.compile(r"^[a-z0-9][a-z0-9-]{2,79}$")
-_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{1,99}$")
+_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{1,99}$")\n_CHANNEL = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$")
 
 
 @dataclass(frozen=True)
@@ -55,7 +55,7 @@ class CampaignLinkStore:
             raise ValueError("invalid campaign slug")
         if creator_id and not _ID.fullmatch(creator_id):
             raise ValueError("invalid creator id")
-        if not _ID.fullmatch(channel):
+        if not _CHANNEL.fullmatch(channel):
             raise ValueError("invalid channel")
         item = CampaignLink(slug, market_id, creator_id, channel, True, datetime.now(timezone.utc))
         with self._connection() as connection:
