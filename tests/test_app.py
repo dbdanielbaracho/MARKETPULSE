@@ -40,7 +40,12 @@ def test_seo_endpoints_and_canonical_are_consistent():
     assert 'application/ld+json' in home.text
     assert 'property="og:url"' in home.text
     assert robots.status_code == 200
-    assert "Sitemap: https://marketpulse-production-aa9f.up.railway.app/sitemap.xml" in robots.text
+    assert robots.text.splitlines() == [
+        "User-agent: *",
+        "Allow: /",
+        "Sitemap: https://marketpulse-production-aa9f.up.railway.app/sitemap.xml",
+    ]
+    assert r"\\n" not in robots.text
     assert sitemap.status_code == 200
     assert "<loc>https://marketpulse-production-aa9f.up.railway.app/</loc>" in sitemap.text
 
