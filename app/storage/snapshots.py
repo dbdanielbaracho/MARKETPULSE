@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from app.services.intelligence import MarketSnapshot
@@ -54,3 +55,21 @@ class SnapshotStore:
             return None
         from datetime import datetime
         return MarketSnapshot(row[0], row[1], row[2], datetime.fromisoformat(row[3]))
+
+    def history(self, canonical_id: str, *, hours: int = 168, limit: int = 500) -> list[MarketSnapshot]:
+        """Return bounded oldest-to-newest history for public charts."""
+        bounded_hours = min(max(hours, 1), 24 * 365)
+        bounded_limit = min(max(limit, 2), 2000)
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=bounded_hours)).isoformat()
+        with self._connect() as connection:
+            rows = connection.execute(
+                """SELECT canonical_id, probability, volume_usd, observed_at
+                   FROM market_snapshots
+                   WHERE canonical_id = ? AND observed_at >= ?
+                   ORDER BY observed_at DESC LIMIT ?""",
+                (canonical_id, cutoff, bounded_limit),
+            ).fetchall()
+        return [
+            MarketSnapshot(row[0], row[1], row[2], datetime.fromisoformat(row[3]))
+            for row in reversed(rows)
+        ]
