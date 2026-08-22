@@ -15,7 +15,13 @@ class PolymarketAdapter:
         self.timeout_seconds = timeout_seconds
 
     async def fetch_markets(self, limit: int = 100, after: str | None = None) -> list[NormalizedMarket]:
-        params: dict[str, Any] = {"limit": limit, "active": "true", "closed": "false"}
+        params: dict[str, Any] = {
+            "limit": limit,
+            "active": "true",
+            "closed": "false",
+            "order": "volume24hr",
+            "ascending": "false",
+        }
         if after:
             params["after"] = after
         async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
