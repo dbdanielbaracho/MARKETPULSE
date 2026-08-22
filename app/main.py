@@ -31,7 +31,7 @@ from app.services.social_distribution import all_channel_readiness
 from app.storage.content_queue import ContentQueueStore, PersistenceProbe
 from app.storage.snapshots import SnapshotStore
 
-APP_VERSION = "0.28.0"
+APP_VERSION = "0.28.1"
 
 
 class DiscoveryMarket(BaseModel):
