@@ -88,7 +88,7 @@ async def lifespan(_: FastAPI):
     worker = IngestionWorker(
         store=store,
         flags=flags,
-        kalshi=KalshiAdapter(os.getenv("MP_KALSHI_BASE_URL", "https://api.elections.kalshi.com/trade-api/v2")),
+        kalshi=KalshiAdapter(os.getenv("MP_KALSHI_BASE_URL", "https://external-api.kalshi.com/trade-api/v2")),
         polymarket=PolymarketAdapter(os.getenv("MP_POLYMARKET_BASE_URL", "https://gamma-api.polymarket.com")),
     )
     stop = asyncio.Event()
