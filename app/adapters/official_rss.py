@@ -185,10 +185,13 @@ class TrustedFeedCollector:
             _validate_source(source)
         self.sources = sources
         self.client = client
+        self.last_source_item_counts: dict[str, int] = {}
+        self.last_total_item_count = 0
 
     async def collect(self, markets: list[MarketLike]) -> tuple[dict[str, list[EvidenceItem]], tuple[str, ...]]:
         evidence: list[EvidenceItem] = []
         errors: list[str] = []
+        source_item_counts: dict[str, int] = {}
         retrieved_at = datetime.now(timezone.utc)
         owns_client = self.client is None
         client = self.client or httpx.AsyncClient(timeout=8, follow_redirects=False, headers={"User-Agent": "MarketPulse/0.9 evidence collector"})
@@ -200,12 +203,16 @@ class TrustedFeedCollector:
                     content_length = int(response.headers.get("content-length", "0"))
                     if content_length > MAX_FEED_BYTES:
                         raise ValueError("feed exceeds size limit")
-                    evidence.extend(parse_feed(response.content, source, retrieved_at))
+                    parsed_items = parse_feed(response.content, source, retrieved_at)
+                    evidence.extend(parsed_items)
+                    source_item_counts[source.publisher] = source_item_counts.get(source.publisher, 0) + len(parsed_items)
                 except (httpx.HTTPError, ET.ParseError, ValueError) as exc:
                     errors.append(f"{source.publisher}:{type(exc).__name__}")
         finally:
             if owns_client:
                 await client.aclose()
+        self.last_source_item_counts = source_item_counts
+        self.last_total_item_count = len(evidence)
         return associate(markets, evidence, self.sources), tuple(errors)
 
 
