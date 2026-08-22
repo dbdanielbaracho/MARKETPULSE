@@ -991,7 +991,11 @@ def outbound_redirect(
 
     click_id = token_urlsafe(18)
     attribution_id = str(uuid4())
-    partner_id = os.getenv(f"MP_{venue.upper()}_PARTNER_ID", f"{venue}-organic").strip()
+    commercial_verified = os.getenv(
+        f"MP_{venue.upper()}_COMMERCIAL_VERIFIED", "false"
+    ).strip().casefold() in {"1", "true", "yes", "on"}
+    configured_partner = os.getenv(f"MP_{venue.upper()}_PARTNER_ID", "").strip()
+    partner_id = configured_partner if commercial_verified and configured_partner else f"{venue}-organic"
     store = RevenueStore(_database_path())
     store.record_click(AttributionRecord(
         attribution_id=attribution_id,
