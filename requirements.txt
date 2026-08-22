@@ -4,3 +4,4 @@ httpx
 pydantic
 pyyaml
 jinja2
+openai>=1.0,<3
