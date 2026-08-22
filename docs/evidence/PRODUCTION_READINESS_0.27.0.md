@@ -95,3 +95,33 @@ Validated at 2026-08-22 19:31 UTC on `https://predibeacon.com/`.
 - regression tests and full-history secret scan passed in PR #64.
 
 This evidence verifies MP-024 for the current US/English public interface. Future locale or major layout changes must repeat the audit.
+
+
+## Operations, revenue and architecture — 0.29.1
+
+Validated on 2026-08-22 between 19:26 and 19:41 UTC.
+
+### Operations (0.28.0)
+
+- `/admin/operations`: HTTP 200, no-store, noindex, CSP nonce, frame denial and no-referrer policy;
+- unauthenticated operations API: HTTP 401;
+- page keeps the administrator token only in memory;
+- checks cover freshness, both venues, refresh errors, evidence sources, persistent storage, AI, failed jobs and distribution switches;
+- runtime remained fresh with 100 Kalshi and 100 Polymarket markets.
+
+### Revenue (0.29.0)
+
+- `/admin/revenue`: HTTP 200 with equivalent hardening;
+- unauthenticated revenue API: HTTP 401;
+- durable SQLite WAL ledger has idempotent click and partner-event keys plus transition audit history;
+- zero-state tests prove known commission totals remain empty when partners have not reported amount and currency;
+- commercial intake remains disabled and no user-funds accounting was introduced.
+
+### Global integration boundary (0.29.1)
+
+- ADR 0001 accepted;
+- MarketFetcher is runtime-checkable;
+- Kalshi, Polymarket and a test future venue satisfy the structural port without a core rewrite;
+- AI, social, commercial and single-venue failures remain outside Market Core availability.
+
+Across all deployments, storage identity remained `fcb833b0327b062c3335f8b95e1dd636`, automated publishing remained false and social distribution remained false.

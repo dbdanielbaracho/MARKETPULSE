@@ -26,14 +26,14 @@ This registry is the scope-control source of truth. A requirement may not disapp
 | MP-020 | Outbound router is country/partner/market aware and fail-closed | IN_PROGRESS | server-side route IDs, HTTPS allowlist, commercial verification and public country-policy gate; all US/BR commercial actions remain disabled until written authorization; market-level eligibility/UI pending |
 | MP-021 | Partner attribution | IN_PROGRESS | durable idempotent click ledger and audit history implemented; commercial intake remains disabled and partner adapter pending |
 | MP-022 | Partner revenue states: pending/approved/payable/paid/reversed etc. | IN_PROGRESS | guarded state machine plus durable idempotent partner-event transitions and audit log; live partner reconciliation pending |
-| MP-023 | Revenue dashboard; no unnecessary user-funds accounting | IN_PROGRESS | authenticated dashboard counts states and only partner-reported currency amounts; truthful zero-state/live evidence pending |
+| MP-023 | Revenue dashboard; no unnecessary user-funds accounting | VERIFIED | durable ledger plus protected 0.29.0 dashboard; zero-state and tests prove only partner-reported currency amounts are counted and no user-funds ledger exists |
 | MP-024 | Mobile-first, simple, accessible website | VERIFIED | responsive UI and trust pages; live 0.28.1 DOM audit confirmed language/title/main/h1/skip link, explicit field names, 44px targets, focus rule, unique IDs and no horizontal overflow |
 | MP-025 | Search and category discovery | VERIFIED | deployed API/UI filters with production evidence in `docs/LIVE_EVIDENCE.md` |
 | MP-026 | Freshness displayed honestly; never claim live without evidence | VERIFIED | bounded freshness states, UI banner, tests and live Railway evidence |
 | MP-027 | GitHub PR + CI gates | VERIFIED | repository workflow |
 | MP-028 | Railway staging with deterministic healthcheck | VERIFIED | Docker deployment + /health |
 | MP-029 | Secrets never committed | VERIFIED | pinned Gitleaks CI gate scans full Git history on pushes and PRs |
-| MP-030 | Observability, retries, timeouts, rate-limit handling | IN_PROGRESS | retries/timeouts, structured runtime telemetry and authenticated operations dashboard with explicit critical/warning checks; live dashboard evidence pending |
+| MP-030 | Observability, retries, timeouts, rate-limit handling | VERIFIED | bounded retry/timeout behavior, structured telemetry, live protected 0.28.0 operations dashboard, explicit critical/warning checks, fail-closed auth and regression tests |
 | MP-031 | Feature flags and kill switches for external venues/publishing | VERIFIED | fail-closed runtime flags + worker enforcement + tests |
 | MP-032 | Partner economics never invented; require evidence/config | IN_PROGRESS | router requires commercial_verified, commission absent without evidence, and partner-readiness checklist captures required contract/reconciliation proof; config validation pending |
 | MP-033 | Global-ready locale/currency/timezone/policy boundaries | IN_PROGRESS | country packs plus explicit US, Brazil and unknown-country policy boundaries; runtime localization pending |
