@@ -118,6 +118,15 @@ class ContentQueueStore:
                 );
                 CREATE INDEX IF NOT EXISTS idx_content_draft_state
                     ON content_drafts(state, created_at);
+                CREATE TABLE IF NOT EXISTS content_draft_audit (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    draft_id TEXT NOT NULL,
+                    from_state TEXT,
+                    to_state TEXT NOT NULL CHECK(to_state IN ('pending_review', 'approved', 'rejected')),
+                    reason TEXT NOT NULL,
+                    occurred_at TEXT NOT NULL,
+                    FOREIGN KEY(draft_id) REFERENCES content_drafts(draft_id)
+                );
                 CREATE INDEX IF NOT EXISTS idx_content_candidate_state
                     ON content_candidates(state, created_at);
                 CREATE TABLE IF NOT EXISTS content_candidate_audit (
@@ -375,6 +384,12 @@ class ContentQueueStore:
                 ),
             )
             connection.execute(
+                """INSERT INTO content_draft_audit(
+                       draft_id, from_state, to_state, reason, occurred_at
+                   ) VALUES (?, NULL, 'pending_review', 'draft_created', ?)""",
+                (draft_id, timestamp),
+            )
+            connection.execute(
                 "UPDATE content_candidates SET state = 'completed', updated_at = ? WHERE candidate_id = ?",
                 (timestamp, candidate_id),
             )
@@ -394,6 +409,82 @@ class ContentQueueStore:
             state="pending_review",
             created_at=datetime.fromisoformat(timestamp),
         )
+
+
+    def drafts(self, state: str = "pending_review", limit: int = 50) -> list[StoredDraft]:
+        if state not in {"pending_review", "approved", "rejected"}:
+            raise ValueError("invalid draft state")
+        if not 1 <= limit <= 100:
+            raise ValueError("draft limit must be between 1 and 100")
+        with self._connect() as connection:
+            rows = connection.execute(
+                """SELECT draft_id, candidate_id, headline, body, citation_ids,
+                          generator, state, created_at
+                   FROM content_drafts WHERE state = ?
+                   ORDER BY created_at, draft_id LIMIT ?""",
+                (state, limit),
+            ).fetchall()
+        return [
+            StoredDraft(
+                draft_id=row[0], candidate_id=row[1], headline=row[2], body=row[3],
+                citation_ids=tuple(json.loads(row[4])), generator=row[5], state=row[6],
+                created_at=datetime.fromisoformat(row[7]),
+            )
+            for row in rows
+        ]
+
+    def review_draft(
+        self,
+        draft_id: str,
+        to_state: Literal["approved", "rejected"],
+        reason: str,
+        now: datetime | None = None,
+    ) -> StoredDraft:
+        if to_state not in {"approved", "rejected"}:
+            raise ValueError("draft review must approve or reject")
+        if not reason.strip():
+            raise ValueError("draft review reason is required")
+        timestamp = (now or datetime.now(timezone.utc)).isoformat()
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT state FROM content_drafts WHERE draft_id = ?",
+                (draft_id,),
+            ).fetchone()
+            if row is None:
+                raise KeyError(draft_id)
+            if row[0] != "pending_review":
+                raise ValueError(f"draft is not pending review: {row[0]}")
+            connection.execute(
+                "UPDATE content_drafts SET state = ? WHERE draft_id = ?",
+                (to_state, draft_id),
+            )
+            connection.execute(
+                """INSERT INTO content_draft_audit(
+                       draft_id, from_state, to_state, reason, occurred_at
+                   ) VALUES (?, 'pending_review', ?, ?, ?)""",
+                (draft_id, to_state, reason.strip(), timestamp),
+            )
+            draft_row = connection.execute(
+                """SELECT draft_id, candidate_id, headline, body, citation_ids,
+                          generator, state, created_at
+                   FROM content_drafts WHERE draft_id = ?""",
+                (draft_id,),
+            ).fetchone()
+        return StoredDraft(
+            draft_id=draft_row[0], candidate_id=draft_row[1], headline=draft_row[2],
+            body=draft_row[3], citation_ids=tuple(json.loads(draft_row[4])),
+            generator=draft_row[5], state=draft_row[6],
+            created_at=datetime.fromisoformat(draft_row[7]),
+        )
+
+    def draft_audit(self, draft_id: str) -> list[tuple[str | None, str, str]]:
+        with self._connect() as connection:
+            return connection.execute(
+                """SELECT from_state, to_state, reason
+                   FROM content_draft_audit WHERE draft_id = ? ORDER BY id""",
+                (draft_id,),
+            ).fetchall()
 
     def draft_counts(self) -> dict[str, int]:
         result = {"pending_review": 0, "approved": 0, "rejected": 0}
