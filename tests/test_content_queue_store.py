@@ -70,3 +70,27 @@ def test_invalid_transition_fails_closed(tmp_path):
         store.transition(identifier, "completed", "skip_claim", NOW)
     with pytest.raises(ValueError):
         store.transition(identifier, "claimed", "", NOW)
+
+
+def test_startup_probe_preserves_identity_and_increments(tmp_path):
+    database = tmp_path / "queue.db"
+    first_store = ContentQueueStore(database)
+    first = first_store.record_startup(NOW)
+
+    second_time = datetime(2026, 8, 22, 1, tzinfo=timezone.utc)
+    second_store = ContentQueueStore(database)
+    second = second_store.record_startup(second_time)
+
+    assert second.identity == first.identity
+    assert first.startup_count == 1
+    assert second.startup_count == 2
+    assert second.first_started_at == NOW
+    assert second.last_started_at == second_time
+
+
+def test_startup_probe_is_independent_per_database(tmp_path):
+    first = ContentQueueStore(tmp_path / "first.db").record_startup(NOW)
+    second = ContentQueueStore(tmp_path / "second.db").record_startup(NOW)
+
+    assert first.identity != second.identity
+    assert first.startup_count == second.startup_count == 1
