@@ -93,3 +93,32 @@ def test_comparison_returns_404_for_unknown_market():
     seed()
     response = client.get("/api/v1/compare", params={"left_id": "kalshi:a", "right_id": "kalshi:missing"})
     assert response.status_code == 404
+
+
+def test_market_evidence_preserves_primary_venue_provenance():
+    now = datetime.now(timezone.utc)
+    set_discovery_markets([
+        DiscoveryMarket(
+            canonical_id="kalshi:evidence",
+            title="Will evidence remain attributable?",
+            venue="kalshi",
+            probability=.5,
+            volume_usd=1,
+            trend_score=1,
+            observed_at=now,
+            source_url="https://kalshi.com/markets/evidence",
+        )
+    ])
+    response = client.get("/api/v1/evidence", params={"market_id": "kalshi:evidence"})
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["publisher_count"] == 1
+    assert payload["items"][0]["publisher"] == "Kalshi"
+    assert payload["items"][0]["kind"] == "venue"
+    assert payload["items"][0]["freshness"] == "undated"
+    assert payload["items"][0]["url"] == "https://kalshi.com/markets/evidence"
+
+
+def test_market_evidence_returns_404_for_unknown_market():
+    set_discovery_markets([])
+    assert client.get("/api/v1/evidence", params={"market_id": "missing"}).status_code == 404

@@ -15,7 +15,7 @@ This registry is the scope-control source of truth. A requirement may not disapp
 | MP-009 | Movers/trending discovery | VERIFIED | runtime ranking API/UI and reproducible production evidence in `docs/LIVE_EVIDENCE.md` |
 | MP-010 | Market equivalence must not be inferred from title similarity alone | VERIFIED | fail-closed matcher, adversarial tests, comparison API and deployed evidence |
 | MP-011 | Market comparison UI with explicit non-equivalence handling | VERIFIED | accessible comparison UI and live `equivalent_contracts=false` evidence |
-| MP-012 | News/evidence context engine | IN_PROGRESS | provenance model + canonical URL dedupe + explicit freshness states + source diversity gate; collectors/UI pending |
+| MP-012 | News/evidence context engine | IN_PROGRESS | primary venue collector, provenance API and UI added; independent news/official collectors pending |
 | MP-013 | Automated AI content candidates | IN_PROGRESS | evidence-gated candidate classifier with update/create decisions; generation/queue persistence pending |
 | MP-014 | Automated website publishing | REQUIRED | content lifecycle + rollback |
 | MP-015 | SEO automation | VERIFIED | canonical, Open Graph, JSON-LD, valid robots.txt and sitemap with tests/live evidence |
