@@ -37,7 +37,7 @@ This registry is the scope-control source of truth. A requirement may not disapp
 | MP-031 | Feature flags and kill switches for external venues/publishing | VERIFIED | fail-closed runtime flags + worker enforcement + tests |
 | MP-032 | Partner economics never invented; require evidence/config | IN_PROGRESS | router requires commercial_verified, commission absent without evidence, and partner-readiness checklist captures required contract/reconciliation proof; config validation pending |
 | MP-033 | Global-ready locale/currency/timezone/policy boundaries | IN_PROGRESS | country packs plus explicit US, Brazil and unknown-country policy boundaries; runtime localization pending |
-| MP-034 | Future integration path with broader global platform preserved | REQUIRED | bounded interfaces/ADR |
+| MP-034 | Future integration path with broader global platform preserved | VERIFIED | accepted ADR 0001, runtime-checkable MarketFetcher port, normalized domain boundary and regression tests prove new venue adapters require no core rewrite |
 | MP-035 | Final evidence audit: requirement -> code -> config -> test -> result | REQUIRED | release checklist |
 
 ## Change-control rule

@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass
-from typing import Awaitable, Callable, Protocol
+from typing import Awaitable, Callable, Protocol, runtime_checkable
 
 from app.config.runtime import RuntimeFlags
 from app.domain.markets import NormalizedMarket
@@ -15,6 +15,7 @@ from app.storage.snapshots import SnapshotStore
 logger = logging.getLogger("marketpulse.ingestion")
 
 
+@runtime_checkable
 class MarketFetcher(Protocol):
     async def fetch_markets(self, limit: int = 100) -> object: ...
 
