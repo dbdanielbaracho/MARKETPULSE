@@ -152,6 +152,21 @@ class ContentQueueStore:
                 );
                 CREATE INDEX IF NOT EXISTS idx_content_publication_state
                     ON content_publications(state, published_at);
+                CREATE TABLE IF NOT EXISTS content_publication_schedule (
+                    schedule_id TEXT PRIMARY KEY,
+                    draft_id TEXT NOT NULL UNIQUE,
+                    scheduled_at TEXT NOT NULL,
+                    state TEXT NOT NULL CHECK(state IN ('scheduled', 'published', 'failed', 'cancelled')),
+                    reason TEXT NOT NULL,
+                    publication_id TEXT,
+                    error TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY(draft_id) REFERENCES content_drafts(draft_id),
+                    FOREIGN KEY(publication_id) REFERENCES content_publications(publication_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_publication_schedule_due
+                    ON content_publication_schedule(state, scheduled_at);
                 CREATE TABLE IF NOT EXISTS content_publication_audit (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     publication_id TEXT NOT NULL,
@@ -713,6 +728,100 @@ class ContentQueueStore:
                    FROM content_publication_audit WHERE publication_id = ? ORDER BY id""",
                 (publication_id,),
             ).fetchall()
+
+    def schedule_publication(
+        self,
+        draft_id: str,
+        scheduled_at: datetime,
+        reason: str,
+    ) -> dict[str, object]:
+        if not reason.strip():
+            raise ValueError("schedule reason is required")
+        if scheduled_at.tzinfo is None:
+            raise ValueError("scheduled_at must include timezone")
+        now = datetime.now(timezone.utc)
+        schedule_id = f"schedule_{sha256(draft_id.encode()).hexdigest()[:20]}"
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            draft = connection.execute(
+                "SELECT state FROM content_drafts WHERE draft_id=?",
+                (draft_id,),
+            ).fetchone()
+            if draft is None:
+                raise KeyError(draft_id)
+            if draft[0] != "approved":
+                raise ValueError("only approved drafts can be scheduled")
+            existing = connection.execute(
+                """SELECT schedule_id, draft_id, scheduled_at, state, reason,
+                          publication_id, error, created_at, updated_at
+                   FROM content_publication_schedule WHERE draft_id=?""",
+                (draft_id,),
+            ).fetchone()
+            if existing:
+                return dict(zip(
+                    ("schedule_id", "draft_id", "scheduled_at", "state", "reason", "publication_id", "error", "created_at", "updated_at"),
+                    existing,
+                ))
+            timestamp = now.isoformat()
+            connection.execute(
+                """INSERT INTO content_publication_schedule
+                (schedule_id, draft_id, scheduled_at, state, reason, publication_id,
+                 error, created_at, updated_at)
+                VALUES (?, ?, ?, 'scheduled', ?, NULL, NULL, ?, ?)""",
+                (schedule_id, draft_id, scheduled_at.astimezone(timezone.utc).isoformat(), reason.strip(), timestamp, timestamp),
+            )
+        return {
+            "schedule_id": schedule_id,
+            "draft_id": draft_id,
+            "scheduled_at": scheduled_at.astimezone(timezone.utc).isoformat(),
+            "state": "scheduled",
+            "reason": reason.strip(),
+            "publication_id": None,
+            "error": None,
+            "created_at": timestamp,
+            "updated_at": timestamp,
+        }
+
+    def publish_due(self, now: datetime | None = None, limit: int = 20) -> list[dict[str, object]]:
+        current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+        with self._connect() as connection:
+            rows = connection.execute(
+                """SELECT schedule_id, draft_id, reason
+                   FROM content_publication_schedule
+                   WHERE state='scheduled' AND scheduled_at <= ?
+                   ORDER BY scheduled_at, schedule_id LIMIT ?""",
+                (current.isoformat(), min(max(limit, 1), 100)),
+            ).fetchall()
+        results = []
+        for schedule_id, draft_id, reason in rows:
+            try:
+                publication = self.publish_draft(draft_id, f"scheduled: {reason}", now=current)
+                state, error = "published", None
+            except Exception as exc:
+                publication = None
+                state, error = "failed", type(exc).__name__
+            with self._connect() as connection:
+                connection.execute(
+                    """UPDATE content_publication_schedule
+                       SET state=?, publication_id=?, error=?, updated_at=?
+                       WHERE schedule_id=? AND state='scheduled'""",
+                    (state, publication.publication_id if publication else None, error, current.isoformat(), schedule_id),
+                )
+            results.append({
+                "schedule_id": schedule_id,
+                "draft_id": draft_id,
+                "state": state,
+                "publication_id": publication.publication_id if publication else None,
+                "error": error,
+            })
+        return results
+
+    def schedule_counts(self) -> dict[str, int]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT state, COUNT(*) FROM content_publication_schedule GROUP BY state"
+            ).fetchall()
+        return {state: count for state, count in rows}
 
     def publication_counts(self) -> dict[str, int]:
         result = {"active": 0, "rolled_back": 0}
