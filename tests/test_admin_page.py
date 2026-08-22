@@ -5,7 +5,7 @@ def test_admin_page_uses_nonce_and_security_headers():
     response = admin_page()
     body = response.body.decode()
 
-    assert "MarketPulse · Editorial review" in body
+    assert "PrediBeacon · Editorial review" in body
     assert "__CSP_NONCE__" not in body
     assert "localStorage" not in body
     assert "sessionStorage" not in body
