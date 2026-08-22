@@ -27,10 +27,11 @@ from app.services.country_policy import resolve_country_policy
 from app.services.content_drafts import generate_evidence_brief
 from app.services.ingestion import IngestionWorker, RefreshBatch
 from app.services.matching import MarketContractFacts, decide_match
+from app.services.social_distribution import all_channel_readiness
 from app.storage.content_queue import ContentQueueStore, PersistenceProbe
 from app.storage.snapshots import SnapshotStore
 
-APP_VERSION = "0.26.0"
+APP_VERSION = "0.27.0"
 
 
 class DiscoveryMarket(BaseModel):
@@ -520,6 +521,7 @@ def status() -> dict[str, object]:
         "admin_review_configured": _admin_review_configured(),
         "content_publication_counts": ContentQueueStore(_database_path()).publication_counts(),
         "automated_publishing_enabled": RuntimeFlags.from_env().automated_publishing,
+        "social_distribution_enabled": RuntimeFlags.from_env().social_distribution,
     }
 
 
@@ -536,6 +538,24 @@ def country_policy(country: str | None = Query(default=None, min_length=2, max_l
         "route_mode": policy.route_mode,
         "reason": policy.reason,
     }
+
+
+@app.get("/api/v1/social/readiness")
+def social_readiness(
+    country: str | None = Query(default=None, min_length=2, max_length=2),
+) -> list[dict[str, object]]:
+    return [
+        {
+            "channel": item.channel,
+            "ready": item.ready,
+            "reasons": list(item.reasons),
+            "credential_configured": item.credential_configured,
+            "platform_authorized": item.platform_authorized,
+            "country": item.country,
+            "audience": item.audience,
+        }
+        for item in all_channel_readiness(country)
+    ]
 
 
 @app.get("/admin", response_class=HTMLResponse, include_in_schema=False)
