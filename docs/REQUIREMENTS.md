@@ -4,7 +4,7 @@ This registry is the scope-control source of truth. A requirement may not disapp
 
 | ID | Requirement | Status | Evidence / gate |
 |---|---|---|---|
-| MP-001 | Automation-first operation; no routine manual site feeding | IN_PROGRESS | ingestion worker and runtime scheduling implemented; content/distribution workers + E2E pending |
+| MP-001 | Automation-first operation; no routine manual site feeding | IN_PROGRESS | ingestion and scheduled editorial publication workers implemented; external distribution providers and end-to-end production evidence pending |
 | MP-002 | Configuration-first; avoid legitimate business variation in hardcode | IN_PROGRESS | versioned config + validation; PrediBeacon public brand remains separated from MarketPulse technical identifiers |
 | MP-003 | USA first active market | VERIFIED | US country pack |
 | MP-004 | Architecture prepared for UK and Brazil | VERIFIED | disabled UK/BR country packs |
@@ -17,7 +17,7 @@ This registry is the scope-control source of truth. A requirement may not disapp
 | MP-011 | Market comparison UI with explicit non-equivalence handling | VERIFIED | accessible comparison UI and live `equivalent_contracts=false` evidence |
 | MP-012 | News/evidence context engine | IN_PROGRESS | venue provenance, Federal Reserve/SEC official feeds and allowlisted NPR/BBC/ABC News feeds with freshness, per-source telemetry and conservative matching; 3 live official market matches verified, live publisher diversity pending |
 | MP-013 | Automated AI content candidates | IN_PROGRESS | evidence-gated classifier, durable audited queue, immutable snapshots, citation-locked drafts and opt-in OpenAI Structured Outputs provider with Luna default, reasoning disabled, output cap and daily draft limit; credential/model verification passed in production, first evidence-diverse AI draft pending |
-| MP-014 | Automated website publishing | IN_PROGRESS | fail-closed authenticated review plus manual publication API, immutable version/citations, public article views and audited rollback; production publishing UI, scheduling and automated worker remain pending |
+| MP-014 | Automated website publishing | IN_PROGRESS | fail-closed authenticated review UI, manual release, durable UTC scheduling, automated due-publication worker, immutable version/citations and audited rollback implemented; production enablement evidence pending |
 | MP-015 | SEO automation | VERIFIED | canonical, Open Graph, JSON-LD, valid robots.txt and sitemap with tests/live evidence |
 | MP-016 | Instagram distribution | IN_PROGRESS | fail-closed credential, authorization, country, contract and editorial readiness gates; provider integration pending |
 | MP-017 | TikTok distribution | IN_PROGRESS | fail-closed credential, authorization, country, contract and editorial readiness gates; provider integration pending |
@@ -57,6 +57,7 @@ This registry is the scope-control source of truth. A requirement may not disapp
 | MP-051 | Commercial API credentials are never stored in plaintext | VERIFIED | one-time pb_live secret issuance, SHA-256 at-rest hashing, protected admin creation, scope checks and quota tests implemented |
 | MP-052 | Partner reconciliation events are authenticated and replay-bounded | VERIFIED | venue-specific HMAC-SHA256 signatures, five-minute timestamp window, exact venue validation, idempotent event IDs and adversarial tests implemented |
 | MP-053 | Every active market is represented in the dynamic sitemap | VERIFIED | canonical market URLs are emitted from the current normalized discovery set with hourly change frequency |
+| MP-054 | Scheduled editorial publication is durable, explicit and auditable | VERIFIED | approved-only schedule records, timezone-aware validation, idempotent due worker, admin controls and store regression tests implemented |
 
 ## Change-control rule
 
