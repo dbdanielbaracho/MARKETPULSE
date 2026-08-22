@@ -16,7 +16,7 @@ from fastapi.responses import HTMLResponse, PlainTextResponse, Response
 from pydantic import BaseModel, Field
 
 from app.adapters.kalshi import KalshiAdapter
-from app.adapters.official_rss import OfficialFeedCollector
+from app.adapters.official_rss import TrustedFeedCollector
 from app.adapters.polymarket import PolymarketAdapter
 from app.config.runtime import RuntimeFlags
 from app.domain.evidence import EvidenceBundle, EvidenceItem, EvidenceKind
@@ -24,7 +24,7 @@ from app.services.ingestion import IngestionWorker, RefreshBatch
 from app.services.matching import MarketContractFacts, decide_match
 from app.storage.snapshots import SnapshotStore
 
-APP_VERSION = "0.8.0"
+APP_VERSION = "0.9.0"
 
 
 class DiscoveryMarket(BaseModel):
@@ -153,9 +153,9 @@ def _evidence_refresh_interval() -> float:
     return _bounded_seconds("MP_EVIDENCE_REFRESH_INTERVAL_SECONDS", 900, 300, 86_400)
 
 
-async def run_official_evidence_forever(stop: asyncio.Event) -> None:
+async def run_external_evidence_forever(stop: asyncio.Event) -> None:
     global _EXTERNAL_EVIDENCE, _LAST_EVIDENCE_REFRESH_AT, _LAST_EVIDENCE_ERRORS
-    collector = OfficialFeedCollector()
+    collector = TrustedFeedCollector()
     while not stop.is_set():
         if _DISCOVERY:
             matched, errors = await collector.collect(list(_DISCOVERY))
@@ -212,7 +212,7 @@ async def lifespan(_: FastAPI):
         )
     ]
     if _official_evidence_enabled():
-        tasks.append(asyncio.create_task(run_official_evidence_forever(stop), name="marketpulse-official-evidence"))
+        tasks.append(asyncio.create_task(run_external_evidence_forever(stop), name="marketpulse-external-evidence"))
     try:
         yield
     finally:
@@ -257,7 +257,15 @@ def status() -> dict[str, object]:
         "official_evidence_last_refresh_at": _LAST_EVIDENCE_REFRESH_AT.isoformat() if _LAST_EVIDENCE_REFRESH_AT else None,
         "official_evidence_errors": ",".join(_LAST_EVIDENCE_ERRORS) or None,
         "official_evidence_market_count": len(_EXTERNAL_EVIDENCE),
-        "official_evidence_item_count": sum(len(items) for items in _EXTERNAL_EVIDENCE.values()),
+        "official_evidence_item_count": sum(
+            1 for items in _EXTERNAL_EVIDENCE.values() for item in items
+            if item.kind == EvidenceKind.OFFICIAL
+        ),
+        "news_evidence_item_count": sum(
+            1 for items in _EXTERNAL_EVIDENCE.values() for item in items
+            if item.kind == EvidenceKind.NEWS
+        ),
+        "external_evidence_market_count": len(_EXTERNAL_EVIDENCE),
     }
 
 
