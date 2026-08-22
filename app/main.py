@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 
 from app.adapters.kalshi import KalshiAdapter
 from app.adapters.official_rss import TrustedFeedCollector
+from app.adapters.openai_drafts import OpenAIDraftProvider
 from app.adapters.polymarket import PolymarketAdapter
 from app.config.runtime import RuntimeFlags
 from app.domain.evidence import EvidenceBundle, EvidenceItem, EvidenceKind
@@ -27,7 +28,7 @@ from app.services.matching import MarketContractFacts, decide_match
 from app.storage.content_queue import ContentQueueStore, PersistenceProbe
 from app.storage.snapshots import SnapshotStore
 
-APP_VERSION = "0.13.0"
+APP_VERSION = "0.14.0"
 
 
 class DiscoveryMarket(BaseModel):
@@ -79,6 +80,7 @@ _LAST_EVIDENCE_REFRESH_AT: datetime | None = None
 _LAST_EVIDENCE_ERRORS: tuple[str, ...] = ()
 _CONTENT_QUEUE_COUNTS: dict[str, int] = {}
 _CONTENT_DRAFT_COUNTS: dict[str, int] = {}
+_AI_DRAFTS_ERROR: str | None = None
 _STORAGE_PROBE: PersistenceProbe | None = None
 _PERSISTENT_STORAGE_CONFIGURED = False
 
@@ -190,6 +192,22 @@ def _content_drafts_enabled() -> bool:
     raise ValueError("MP_CONTENT_DRAFTS must be boolean")
 
 
+def _ai_drafts_enabled() -> bool:
+    value = os.getenv("MP_AI_DRAFTS", "false").strip().casefold()
+    if value in {"1", "true", "yes", "on"}:
+        return True
+    if value in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError("MP_AI_DRAFTS must be boolean")
+
+
+def _ai_model() -> str:
+    value = os.getenv("MP_OPENAI_MODEL", "gpt-5.6").strip()
+    if not value or len(value) > 100:
+        raise ValueError("MP_OPENAI_MODEL is invalid")
+    return value
+
+
 def _evidence_refresh_interval() -> float:
     return _bounded_seconds("MP_EVIDENCE_REFRESH_INTERVAL_SECONDS", 900, 300, 86_400)
 
@@ -227,7 +245,11 @@ async def run_external_evidence_forever(stop: asyncio.Event, queue: ContentQueue
             pass
 
 
-async def run_content_drafts_forever(stop: asyncio.Event, queue: ContentQueueStore) -> None:
+async def run_content_drafts_forever(
+    stop: asyncio.Event,
+    queue: ContentQueueStore,
+    ai_provider: OpenAIDraftProvider | None = None,
+) -> None:
     global _CONTENT_QUEUE_COUNTS, _CONTENT_DRAFT_COUNTS
     while not stop.is_set():
         candidate = queue.claim_next()
@@ -238,10 +260,16 @@ async def run_content_drafts_forever(stop: asyncio.Event, queue: ContentQueueSto
         else:
             try:
                 evidence = queue.evidence(candidate.candidate_id)
-                draft = generate_evidence_brief(
-                    market_id=candidate.market_id,
-                    evidence=evidence,
-                )
+                if ai_provider is not None:
+                    draft = await ai_provider.generate(
+                        market_id=candidate.market_id,
+                        evidence=evidence,
+                    )
+                else:
+                    draft = generate_evidence_brief(
+                        market_id=candidate.market_id,
+                        evidence=evidence,
+                    )
                 queue.save_draft(candidate.candidate_id, draft)
             except Exception:
                 current = queue.get(candidate.candidate_id)
@@ -278,7 +306,7 @@ def freshness(now: datetime | None = None) -> tuple[str, float | None]:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    global _CONTENT_QUEUE_COUNTS, _CONTENT_DRAFT_COUNTS, _STORAGE_PROBE, _PERSISTENT_STORAGE_CONFIGURED
+    global _CONTENT_QUEUE_COUNTS, _CONTENT_DRAFT_COUNTS, _AI_DRAFTS_ERROR, _STORAGE_PROBE, _PERSISTENT_STORAGE_CONFIGURED
     flags = RuntimeFlags.from_env()
     database_path = os.getenv("MP_DATABASE_PATH", "/tmp/marketpulse.db")
     store = SnapshotStore(database_path)
@@ -293,6 +321,15 @@ async def lifespan(_: FastAPI):
         kalshi=KalshiAdapter(os.getenv("MP_KALSHI_BASE_URL", "https://api.elections.kalshi.com/trade-api/v2")),
         polymarket=PolymarketAdapter(os.getenv("MP_POLYMARKET_BASE_URL", "https://gamma-api.polymarket.com")),
     )
+    ai_provider = None
+    _AI_DRAFTS_ERROR = None
+    if _ai_drafts_enabled():
+        api_key = os.getenv("MP_OPENAI_API_KEY", "").strip()
+        if api_key:
+            ai_provider = OpenAIDraftProvider(api_key=api_key, model=_ai_model())
+        else:
+            _AI_DRAFTS_ERROR = "missing_api_key"
+
     stop = asyncio.Event()
     tasks = [
         asyncio.create_task(
@@ -306,8 +343,11 @@ async def lifespan(_: FastAPI):
     ]
     if _official_evidence_enabled():
         tasks.append(asyncio.create_task(run_external_evidence_forever(stop, content_queue), name="marketpulse-external-evidence"))
-    if _content_drafts_enabled():
-        tasks.append(asyncio.create_task(run_content_drafts_forever(stop, content_queue), name="marketpulse-content-drafts"))
+    if _content_drafts_enabled() and (not _ai_drafts_enabled() or ai_provider is not None):
+        tasks.append(asyncio.create_task(
+            run_content_drafts_forever(stop, content_queue, ai_provider),
+            name="marketpulse-content-drafts",
+        ))
     try:
         yield
     finally:
@@ -365,6 +405,13 @@ def status() -> dict[str, object]:
         "content_queue_counts": _CONTENT_QUEUE_COUNTS,
         "content_drafts_enabled": _content_drafts_enabled(),
         "content_draft_counts": _CONTENT_DRAFT_COUNTS,
+        "ai_drafts": {
+            "enabled": _ai_drafts_enabled(),
+            "provider": "openai" if _ai_drafts_enabled() else None,
+            "model": _ai_model() if _ai_drafts_enabled() else None,
+            "configured": bool(os.getenv("MP_OPENAI_API_KEY", "").strip()),
+            "error": _AI_DRAFTS_ERROR,
+        },
         "storage": {
             "writable": _STORAGE_PROBE is not None,
             "persistent_volume_configured": _PERSISTENT_STORAGE_CONFIGURED,
