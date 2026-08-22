@@ -31,7 +31,7 @@ from app.services.social_distribution import all_channel_readiness
 from app.storage.content_queue import ContentQueueStore, PersistenceProbe
 from app.storage.snapshots import SnapshotStore
 
-APP_VERSION = "0.27.1"
+APP_VERSION = "0.28.0"
 
 
 class DiscoveryMarket(BaseModel):
@@ -537,6 +537,28 @@ def status() -> dict[str, object]:
     }
 
 
+@app.get("/api/v1/admin/operations", dependencies=[Depends(_require_admin)])
+def operations_snapshot() -> dict[str, object]:
+    snapshot = status()
+    venue_counts = snapshot["venue_market_counts"]
+    storage = snapshot["storage"]
+    ai = snapshot["ai_drafts"]
+    queue_counts = snapshot["content_queue_counts"]
+    checks = [
+        {"name": "Market freshness", "ok": snapshot["freshness"] == "fresh", "severity": "critical" if snapshot["freshness"] in {"unavailable", "future"} else "warning", "detail": f'Data state is {snapshot["freshness"]}; age={snapshot["data_age_seconds"]}s.'},
+        {"name": "Venue ingestion", "ok": venue_counts["kalshi"] > 0 and venue_counts["polymarket"] > 0, "severity": "critical", "detail": f'Kalshi={venue_counts["kalshi"]}; Polymarket={venue_counts["polymarket"]}.'},
+        {"name": "Refresh errors", "ok": snapshot["last_refresh_errors"] is None, "severity": "critical", "detail": snapshot["last_refresh_errors"] or "No venue refresh errors."},
+        {"name": "Evidence sources", "ok": snapshot["official_evidence_errors"] is None, "severity": "warning", "detail": snapshot["official_evidence_errors"] or f'{snapshot["evidence_source_total_item_count"]} source items available.'},
+        {"name": "Persistent storage", "ok": bool(storage["writable"] and storage["persistent_volume_configured"]), "severity": "critical", "detail": "Persistent volume is writable." if storage["writable"] else "Storage is not writable."},
+        {"name": "AI draft provider", "ok": not ai["enabled"] or bool(ai["configured"] and ai["verified"] and not ai["error"]), "severity": "warning", "detail": ai["error"] or ("Provider verified." if ai["enabled"] else "AI drafts disabled.")},
+        {"name": "Failed content jobs", "ok": queue_counts.get("failed", 0) == 0, "severity": "warning", "detail": f'{queue_counts.get("failed", 0)} failed queue items.'},
+        {"name": "Distribution safety", "ok": not snapshot["automated_publishing_enabled"] and not snapshot["social_distribution_enabled"], "severity": "critical", "detail": "Automated publishing and social distribution are disabled." if not snapshot["automated_publishing_enabled"] and not snapshot["social_distribution_enabled"] else "A distribution switch is enabled."},
+    ]
+    failing = [item for item in checks if not item["ok"]]
+    overall = "critical" if any(item["severity"] == "critical" for item in failing) else ("warning" if failing else "healthy")
+    return {"overall": overall, "generated_at": snapshot["generated_at"], "checks": checks, "status": snapshot}
+
+
 @app.get("/api/v1/policy")
 def country_policy(country: str | None = Query(default=None, min_length=2, max_length=2)) -> dict[str, object]:
     policy = resolve_country_policy(country)
@@ -568,6 +590,29 @@ def social_readiness(
         }
         for item in all_channel_readiness(country)
     ]
+
+
+@app.get("/admin/operations", response_class=HTMLResponse, include_in_schema=False)
+def operations_page() -> HTMLResponse:
+    nonce = token_urlsafe(18)
+    template = Path(__file__).parent / "templates" / "operations.html"
+    body = template.read_text(encoding="utf-8").replace("__CSP_NONCE__", nonce)
+    return HTMLResponse(
+        body,
+        headers={
+            "Cache-Control": "no-store",
+            "Content-Security-Policy": (
+                "default-src 'none'; "
+                f"script-src 'nonce-{nonce}'; "
+                f"style-src 'nonce-{nonce}'; "
+                "connect-src 'self'; img-src 'none'; font-src 'none'; "
+                "frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+            ),
+            "Referrer-Policy": "no-referrer",
+            "X-Content-Type-Options": "nosniff",
+            "X-Frame-Options": "DENY",
+        },
+    )
 
 
 @app.get("/admin", response_class=HTMLResponse, include_in_schema=False)
