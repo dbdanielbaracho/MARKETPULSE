@@ -5,6 +5,7 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from hashlib import sha256
+from secrets import token_hex
 from pathlib import Path
 from typing import Literal
 
@@ -18,6 +19,14 @@ _ALLOWED_TRANSITIONS: dict[str, set[str]] = {
     "completed": set(),
     "rejected": set(),
 }
+
+
+@dataclass(frozen=True)
+class PersistenceProbe:
+    identity: str
+    startup_count: int
+    first_started_at: datetime
+    last_started_at: datetime
 
 
 @dataclass(frozen=True)
@@ -48,6 +57,13 @@ class ContentQueueStore:
         with self._connect() as connection:
             connection.executescript(
                 """
+                CREATE TABLE IF NOT EXISTS storage_probe (
+                    singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
+                    identity TEXT NOT NULL,
+                    startup_count INTEGER NOT NULL CHECK(startup_count >= 1),
+                    first_started_at TEXT NOT NULL,
+                    last_started_at TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS content_candidates (
                     candidate_id TEXT PRIMARY KEY,
                     idempotency_key TEXT NOT NULL UNIQUE,
@@ -73,6 +89,40 @@ class ContentQueueStore:
                 );
                 """
             )
+
+    def record_startup(self, now: datetime | None = None) -> PersistenceProbe:
+        timestamp = (now or datetime.now(timezone.utc)).isoformat()
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                """SELECT identity, startup_count, first_started_at
+                   FROM storage_probe WHERE singleton = 1"""
+            ).fetchone()
+            if row is None:
+                identity = token_hex(16)
+                startup_count = 1
+                first_started_at = timestamp
+                connection.execute(
+                    """INSERT INTO storage_probe(
+                           singleton, identity, startup_count, first_started_at, last_started_at
+                       ) VALUES (1, ?, ?, ?, ?)""",
+                    (identity, startup_count, first_started_at, timestamp),
+                )
+            else:
+                identity, previous_count, first_started_at = row
+                startup_count = previous_count + 1
+                connection.execute(
+                    """UPDATE storage_probe
+                       SET startup_count = ?, last_started_at = ?
+                       WHERE singleton = 1""",
+                    (startup_count, timestamp),
+                )
+        return PersistenceProbe(
+            identity=identity,
+            startup_count=startup_count,
+            first_started_at=datetime.fromisoformat(first_started_at),
+            last_started_at=datetime.fromisoformat(timestamp),
+        )
 
     @staticmethod
     def _identity(candidate: ContentCandidate) -> tuple[str, str]:
