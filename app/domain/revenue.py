@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from enum import StrEnum
 
@@ -47,7 +47,7 @@ class AttributionRecord:
     commission_amount: float | None = None
     currency: str | None = None
     partner_event_id: str | None = None
-    updated_at: datetime = datetime.now(timezone.utc)
+    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def transition(
         self,
