@@ -48,6 +48,20 @@ class RevenueStore:
                     partner_event_id TEXT UNIQUE,
                     updated_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS outbound_click_context (
+                    click_id TEXT PRIMARY KEY,
+                    market_id TEXT NOT NULL,
+                    campaign_id TEXT,
+                    creator_id TEXT,
+                    channel TEXT,
+                    referrer TEXT,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY(click_id) REFERENCES revenue_attributions(click_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_outbound_context_market
+                    ON outbound_click_context(market_id);
+                CREATE INDEX IF NOT EXISTS idx_outbound_context_campaign
+                    ON outbound_click_context(campaign_id);
                 CREATE TABLE IF NOT EXISTS revenue_audit (
                     audit_id INTEGER PRIMARY KEY AUTOINCREMENT,
                     attribution_id TEXT NOT NULL,
@@ -104,6 +118,33 @@ class RevenueStore:
                 (record.attribution_id, record.state.value, record.updated_at.isoformat()),
             )
             return record
+
+    def record_click_context(
+        self,
+        *,
+        click_id: str,
+        market_id: str,
+        campaign_id: str | None = None,
+        creator_id: str | None = None,
+        channel: str | None = None,
+        referrer: str | None = None,
+    ) -> None:
+        """Persist first-party acquisition context without storing user funds."""
+        with self._connection() as connection:
+            connection.execute(
+                """INSERT OR IGNORE INTO outbound_click_context
+                (click_id, market_id, campaign_id, creator_id, channel, referrer, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    click_id,
+                    market_id,
+                    campaign_id or None,
+                    creator_id or None,
+                    channel or None,
+                    (referrer or "")[:500] or None,
+                    datetime.now().astimezone().isoformat(),
+                ),
+            )
 
     def transition(
         self,
@@ -186,12 +227,24 @@ class RevenueStore:
             audit_events = connection.execute(
                 "SELECT COUNT(*) AS count FROM revenue_audit"
             ).fetchone()["count"]
+            click_context_count = connection.execute(
+                "SELECT COUNT(*) AS count FROM outbound_click_context"
+            ).fetchone()["count"]
+            clicks_by_channel = {
+                (item["channel"] or "direct"): item["count"]
+                for item in connection.execute(
+                    """SELECT channel, COUNT(*) AS count
+                    FROM outbound_click_context GROUP BY channel"""
+                )
+            }
         return {
             "record_count": row["records"],
             "state_counts": states,
             "known_commission_totals": totals,
             "unpriced_record_count": row["unpriced"] or 0,
             "audit_event_count": audit_events,
+            "click_context_count": click_context_count,
+            "clicks_by_channel": clicks_by_channel,
             "last_updated_at": row["last_updated_at"],
             "commercial_intake_enabled": False,
             "notice": "Only partner-reported amounts are counted; no commission is estimated.",
