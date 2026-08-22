@@ -164,8 +164,11 @@ def associate(markets: list[MarketLike], evidence: list[EvidenceItem], sources: 
             source = source_by_publisher.get(item.publisher)
             if source is None:
                 continue
-            if item.kind == EvidenceKind.NEWS and item.freshness(max_age=timedelta(hours=72), now=now) != EvidenceFreshness.FRESH:
-                continue
+            if item.kind == EvidenceKind.NEWS:
+                if item.freshness(max_age=timedelta(hours=72), now=now) != EvidenceFreshness.FRESH:
+                    continue
+                if len(market_tokens & _tokens(item.title)) < 2:
+                    continue
             candidate_tokens = _tokens(f"{item.title} {item.summary or ''}")
             anchors = _PUBLISHER_ANCHORS.get(item.publisher)
             has_anchor = anchors is None or bool(market_tokens & anchors)

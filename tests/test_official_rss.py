@@ -118,3 +118,27 @@ def test_news_source_rejects_non_allowlisted_article_link():
     source = FeedSource("NPR", "https://feeds.npr.org/1001/rss.xml", EvidenceKind.NEWS, ("www.npr.org",), 3)
     payload = b"""<rss><channel><item><title>Federal Reserve interest rate decision</title><link>https://attacker.example/story</link></item></channel></rss>"""
     assert parse_feed(payload, source, now) == []
+
+
+def test_news_summary_cannot_create_unrelated_political_match():
+    now = datetime.now(timezone.utc)
+    source = FeedSource(
+        "BBC News",
+        "https://feeds.bbci.co.uk/news/world/us_and_canada/rss.xml",
+        EvidenceKind.NEWS,
+        ("www.bbc.co.uk",),
+        3,
+    )
+    item = EvidenceItem(
+        title="Key Trump aide Natalie Harp suddenly in spotlight after years behind scenes",
+        url="https://www.bbc.co.uk/news/articles/example",
+        publisher="BBC News",
+        kind=EvidenceKind.NEWS,
+        published_at=now,
+        retrieved_at=now,
+        summary="The Democratic presidential nomination and Senator Jon Ossoff are discussed in the wider political context.",
+    )
+    class Market:
+        canonical_id = "ossoff"
+        title = "Will Jon Ossoff win the 2028 Democratic presidential nomination?"
+    assert associate([Market()], [item], (source,)) == {}
