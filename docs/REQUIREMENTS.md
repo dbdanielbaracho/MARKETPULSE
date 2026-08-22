@@ -27,7 +27,7 @@ This registry is the scope-control source of truth. A requirement may not disapp
 | MP-021 | Partner attribution | IN_PROGRESS | attribution/revenue state model exists; click persistence + partner event reconciliation pending |
 | MP-022 | Partner revenue states: pending/approved/payable/paid/reversed etc. | IN_PROGRESS | explicit guarded state machine + tests; persistence/reconciliation pending |
 | MP-023 | Revenue dashboard; no unnecessary user-funds accounting | REQUIRED | dashboard/reconciliation |
-| MP-024 | Mobile-first, simple, accessible website | IN_PROGRESS | dynamic PrediBeacon UI plus public methodology, risk, privacy and pre-launch terms; usability/accessibility audit pending |
+| MP-024 | Mobile-first, simple, accessible website | IN_PROGRESS | responsive PrediBeacon UI, trust pages, semantic landmarks, explicit control names, universal focus indicators, 44px targets and regression tests; final live audit evidence pending |
 | MP-025 | Search and category discovery | VERIFIED | deployed API/UI filters with production evidence in `docs/LIVE_EVIDENCE.md` |
 | MP-026 | Freshness displayed honestly; never claim live without evidence | VERIFIED | bounded freshness states, UI banner, tests and live Railway evidence |
 | MP-027 | GitHub PR + CI gates | VERIFIED | repository workflow |
