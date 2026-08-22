@@ -40,7 +40,7 @@ from app.storage.content_queue import ContentQueueStore, PersistenceProbe
 from app.storage.revenue import RevenueStore
 from app.storage.snapshots import SnapshotStore
 
-APP_VERSION = "0.36.0"
+APP_VERSION = "0.37.0"
 
 
 class DiscoveryMarket(BaseModel):
@@ -171,6 +171,11 @@ class AdminDraftView(BaseModel):
     generator: str
     state: Literal["pending_review", "approved", "rejected"]
     created_at: datetime
+
+
+class PublicationScheduleRequest(BaseModel):
+    scheduled_at: datetime
+    reason: str = Field(min_length=3, max_length=500)
 
 
 class PublicationActionRequest(BaseModel):
@@ -479,6 +484,18 @@ async def run_content_drafts_forever(
                 pass
 
 
+async def run_scheduled_publications_forever(
+    stop: asyncio.Event,
+    queue: ContentQueueStore,
+) -> None:
+    while not stop.is_set():
+        queue.publish_due(limit=20)
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=30)
+        except TimeoutError:
+            pass
+
+
 def _refresh_interval() -> float:
     return _bounded_seconds("MP_REFRESH_INTERVAL_SECONDS", 300, 30, 86_400)
 
@@ -545,6 +562,11 @@ async def lifespan(_: FastAPI):
             name="marketpulse-ingestion",
         )
     ]
+    if flags.automated_publishing:
+        tasks.append(asyncio.create_task(
+            run_scheduled_publications_forever(stop, content_queue),
+            name="marketpulse-scheduled-publishing",
+        ))
     if _official_evidence_enabled():
         tasks.append(asyncio.create_task(run_external_evidence_forever(stop, content_queue), name="marketpulse-external-evidence"))
     if _content_drafts_enabled() and (not _ai_drafts_enabled() or ai_provider is not None):
@@ -644,6 +666,7 @@ def status() -> dict[str, object]:
         },
         "admin_review_configured": _admin_review_configured(),
         "content_publication_counts": ContentQueueStore(_database_path()).publication_counts(),
+        "content_publication_schedule_counts": ContentQueueStore(_database_path()).schedule_counts(),
         "automated_publishing_enabled": RuntimeFlags.from_env().automated_publishing,
         "social_distribution_enabled": RuntimeFlags.from_env().social_distribution,
     }
@@ -919,6 +942,26 @@ def admin_publications(
         _publication_view(item)
         for item in ContentQueueStore(_database_path()).publications(state, limit)
     ]
+
+
+@app.post(
+    "/api/v1/admin/drafts/{draft_id}/schedule",
+    dependencies=[Depends(_require_admin)],
+)
+def schedule_admin_draft(
+    draft_id: str,
+    request: PublicationScheduleRequest,
+) -> dict[str, object]:
+    try:
+        return ContentQueueStore(_database_path()).schedule_publication(
+            draft_id,
+            request.scheduled_at,
+            request.reason,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="draft not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @app.post(
