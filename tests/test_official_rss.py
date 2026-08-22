@@ -1,5 +1,7 @@
 from datetime import datetime, timezone
 
+import asyncio
+
 import httpx
 import pytest
 
@@ -47,8 +49,7 @@ def test_association_requires_two_meaningful_terms():
     assert list(result) == ["match"]
 
 
-@pytest.mark.asyncio
-async def test_collector_isolates_source_failures():
+def test_collector_isolates_source_failures():
     good = b"""<rss><channel><item><title>Federal Reserve monetary policy</title><link>https://www.federalreserve.gov/news/a.htm</link><pubDate>Sat, 22 Aug 2026 14:00:00 GMT</pubDate></item></channel></rss>"""
     def handler(request):
         if request.url.path.endswith("press_all.xml"):
@@ -62,7 +63,7 @@ async def test_collector_isolates_source_failures():
     class Market:
         canonical_id = "fed"
         title = "Federal Reserve monetary policy"
-    matched, errors = await collector.collect([Market()])
-    await client.aclose()
+    matched, errors = asyncio.run(collector.collect([Market()]))
+    asyncio.run(client.aclose())
     assert "fed" in matched
     assert errors == ("Federal Reserve:HTTPStatusError",)
