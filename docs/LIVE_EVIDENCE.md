@@ -78,3 +78,17 @@ Verified at 2026-08-22T03:42Z on application version `0.6.0`.
 - CI regression tests and full-history secret scanning pass
 
 A live validation initially detected literal newline escapes in `robots.txt`; PR #26 corrected the response and strengthened the exact-line test before MP-015 was marked verified.
+
+
+## Primary market evidence
+
+Verified at 2026-08-22T03:56Z on application version `0.7.0`.
+
+- public market cards expose attributable evidence controls
+- Polymarket evidence returns HTTP 200 with publisher, venue kind, explicit undated state, and primary contract URL
+- Kalshi evidence returns HTTP 200 with the same provenance fields
+- unknown market IDs return 404
+- canonical evidence identifiers and URL deduplication remain enforced
+- a live Kalshi combined-contract title initially exceeded the evidence label bound; PR #29 added safe label truncation and regression coverage before evidence was accepted
+
+This verifies primary venue evidence only. MP-012 remains IN_PROGRESS until independent news and official-source collectors are connected and source-diversity gates pass in production.
