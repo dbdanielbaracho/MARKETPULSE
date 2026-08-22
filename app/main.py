@@ -29,7 +29,7 @@ from app.services.matching import MarketContractFacts, decide_match
 from app.storage.content_queue import ContentQueueStore, PersistenceProbe
 from app.storage.snapshots import SnapshotStore
 
-APP_VERSION = "0.23.0"
+APP_VERSION = "0.24.0"
 
 
 class DiscoveryMarket(BaseModel):
@@ -604,6 +604,21 @@ def _publication_view(item) -> PublicationView:
         published_at=item.published_at,
         rolled_back_at=item.rolled_back_at,
     )
+
+
+@app.get(
+    "/api/v1/admin/publications",
+    response_model=list[PublicationView],
+    dependencies=[Depends(_require_admin)],
+)
+def admin_publications(
+    state: Literal["active", "rolled_back"] = "active",
+    limit: int = Query(default=50, ge=1, le=100),
+) -> list[PublicationView]:
+    return [
+        _publication_view(item)
+        for item in ContentQueueStore(_database_path()).publications(state, limit)
+    ]
 
 
 @app.post(
