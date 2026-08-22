@@ -16,7 +16,7 @@ This registry is the scope-control source of truth. A requirement may not disapp
 | MP-010 | Market equivalence must not be inferred from title similarity alone | VERIFIED | fail-closed matcher, adversarial tests, comparison API and deployed evidence |
 | MP-011 | Market comparison UI with explicit non-equivalence handling | VERIFIED | accessible comparison UI and live `equivalent_contracts=false` evidence |
 | MP-012 | News/evidence context engine | IN_PROGRESS | venue provenance, Federal Reserve/SEC official feeds and allowlisted NPR/BBC news feeds with freshness and conservative matching; live diversity evidence pending |
-| MP-013 | Automated AI content candidates | IN_PROGRESS | evidence-gated classifier, durable audited queue, immutable snapshots, citation-locked drafts and opt-in OpenAI Structured Outputs provider; credentialed production validation pending |
+| MP-013 | Automated AI content candidates | IN_PROGRESS | evidence-gated classifier, durable audited queue, immutable snapshots, citation-locked drafts and opt-in OpenAI Structured Outputs provider with Luna default, minimal reasoning, output cap and daily draft limit; credentialed production validation pending |
 | MP-014 | Automated website publishing | REQUIRED | content lifecycle + rollback |
 | MP-015 | SEO automation | VERIFIED | canonical, Open Graph, JSON-LD, valid robots.txt and sitemap with tests/live evidence |
 | MP-016 | Instagram distribution | REQUIRED | provider/policy integration |
