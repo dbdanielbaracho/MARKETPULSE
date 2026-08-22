@@ -5,7 +5,7 @@ This registry is the scope-control source of truth. A requirement may not disapp
 | ID | Requirement | Status | Evidence / gate |
 |---|---|---|---|
 | MP-001 | Automation-first operation; no routine manual site feeding | IN_PROGRESS | ingestion worker and runtime scheduling implemented; content/distribution workers + E2E pending |
-| MP-002 | Configuration-first; avoid legitimate business variation in hardcode | IN_PROGRESS | versioned config + validation |
+| MP-002 | Configuration-first; avoid legitimate business variation in hardcode | IN_PROGRESS | versioned config + validation; PrediBeacon public brand remains separated from MarketPulse technical identifiers |
 | MP-003 | USA first active market | VERIFIED | US country pack |
 | MP-004 | Architecture prepared for UK and Brazil | VERIFIED | disabled UK/BR country packs |
 | MP-005 | Kalshi public-data ingestion | VERIFIED | current decimal-schema adapter, tests, and live count evidence |
@@ -27,7 +27,7 @@ This registry is the scope-control source of truth. A requirement may not disapp
 | MP-021 | Partner attribution | IN_PROGRESS | attribution/revenue state model exists; click persistence + partner event reconciliation pending |
 | MP-022 | Partner revenue states: pending/approved/payable/paid/reversed etc. | IN_PROGRESS | explicit guarded state machine + tests; persistence/reconciliation pending |
 | MP-023 | Revenue dashboard; no unnecessary user-funds accounting | REQUIRED | dashboard/reconciliation |
-| MP-024 | Mobile-first, simple, accessible website | IN_PROGRESS | dynamic baseline UI; usability/accessibility audit pending |
+| MP-024 | Mobile-first, simple, accessible website | IN_PROGRESS | dynamic baseline UI branded publicly as PrediBeacon; usability/accessibility audit pending |
 | MP-025 | Search and category discovery | VERIFIED | deployed API/UI filters with production evidence in `docs/LIVE_EVIDENCE.md` |
 | MP-026 | Freshness displayed honestly; never claim live without evidence | VERIFIED | bounded freshness states, UI banner, tests and live Railway evidence |
 | MP-027 | GitHub PR + CI gates | VERIFIED | repository workflow |
