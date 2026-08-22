@@ -1255,7 +1255,8 @@ def campaign_entry(slug: str) -> RedirectResponse:
     query = {"market_id": item.market_id, "campaign_id": item.slug, "channel": item.channel}
     if item.creator_id:
         query["creator_id"] = item.creator_id
-    return RedirectResponse(url=f"/market?{urlencode(query)}", status_code=302)
+    market = _market_by_id(item.market_id)
+    return RedirectResponse(url=f"/markets/{market.slug}?{urlencode({key: value for key, value in query.items() if key != 'market_id'})}", status_code=302)
 
 
 @app.get("/api/v1/creators/{creator_id}/markets")
@@ -1591,11 +1592,16 @@ def robots() -> str:
 @app.get("/sitemap.xml")
 def sitemap() -> Response:
     base = html.escape(_public_base_url(), quote=True)
+    market_urls = "".join(
+        f"<url><loc>{base}/markets/{html.escape(item.slug or '', quote=True)}</loc><changefreq>hourly</changefreq></url>"
+        for item in _DISCOVERY
+        if item.slug
+    )
     body = (
         '<?xml version="1.0" encoding="UTF-8"?>'
         '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
         f"<url><loc>{base}/</loc><changefreq>hourly</changefreq></url>"
-        "</urlset>"
+        f"{market_urls}</urlset>"
     )
     return Response(body, media_type="application/xml")
 
