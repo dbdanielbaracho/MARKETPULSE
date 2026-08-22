@@ -58,6 +58,8 @@ This registry is the scope-control source of truth. A requirement may not disapp
 | MP-052 | Partner reconciliation events are authenticated and replay-bounded | VERIFIED | venue-specific HMAC-SHA256 signatures, five-minute timestamp window, exact venue validation, idempotent event IDs and adversarial tests implemented |
 | MP-053 | Every active market is represented in the dynamic sitemap | VERIFIED | canonical market URLs are emitted from the current normalized discovery set with hourly change frequency |
 | MP-054 | Scheduled editorial publication is durable, explicit and auditable | VERIFIED | approved-only schedule records, timezone-aware validation, idempotent due worker, admin controls and store regression tests implemented |
+| MP-055 | Offline caching never persists administrative, API, outbound or editorial responses | VERIFIED | versioned allowlisted service worker excludes sensitive prefixes and has regression coverage |
+| MP-056 | Public responses receive baseline browser security protections | VERIFIED | global nosniff, referrer, permissions, opener and HSTS headers; protected APIs force `no-store`; regression tests implemented |
 
 ## Change-control rule
 
