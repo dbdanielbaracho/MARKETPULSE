@@ -40,6 +40,10 @@ def test_seo_endpoints_and_canonical_are_consistent():
     assert 'rel="canonical"' in home.text
     assert 'application/ld+json' in home.text
     assert 'property="og:url"' in home.text
+    assert "PREDIBEACON" in home.text
+    assert "PrediBeacon — Prediction market intelligence" in home.text
+    assert '"name":"PrediBeacon"' in home.text
+    assert "MarketPulse helps" not in home.text
     assert robots.status_code == 200
     assert robots.text.splitlines() == [
         "User-agent: *",
