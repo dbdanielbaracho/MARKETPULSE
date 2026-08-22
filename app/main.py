@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timedelta, timezone
 from itertools import groupby
 from pathlib import Path
-from secrets import compare_digest
+from secrets import compare_digest, token_urlsafe
 from urllib.parse import urlsplit
 from typing import Annotated, Literal
 
@@ -29,7 +29,7 @@ from app.services.matching import MarketContractFacts, decide_match
 from app.storage.content_queue import ContentQueueStore, PersistenceProbe
 from app.storage.snapshots import SnapshotStore
 
-APP_VERSION = "0.20.0"
+APP_VERSION = "0.21.0"
 
 
 class DiscoveryMarket(BaseModel):
@@ -501,6 +501,29 @@ def status() -> dict[str, object]:
         "admin_review_configured": _admin_review_configured(),
         "automated_publishing_enabled": RuntimeFlags.from_env().automated_publishing,
     }
+
+
+@app.get("/admin", response_class=HTMLResponse, include_in_schema=False)
+def admin_page() -> HTMLResponse:
+    nonce = token_urlsafe(18)
+    template = Path(__file__).parent / "templates" / "admin.html"
+    body = template.read_text(encoding="utf-8").replace("__CSP_NONCE__", nonce)
+    return HTMLResponse(
+        body,
+        headers={
+            "Cache-Control": "no-store",
+            "Content-Security-Policy": (
+                "default-src 'none'; "
+                f"script-src 'nonce-{nonce}'; "
+                f"style-src 'nonce-{nonce}'; "
+                "connect-src 'self'; img-src 'none'; font-src 'none'; "
+                "frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+            ),
+            "Referrer-Policy": "no-referrer",
+            "X-Content-Type-Options": "nosniff",
+            "X-Frame-Options": "DENY",
+        },
+    )
 
 
 @app.get("/api/v1/admin/drafts", response_model=list[AdminDraftView], dependencies=[Depends(_require_admin)])
