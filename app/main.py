@@ -262,7 +262,7 @@ def compare_markets(
 @app.get("/robots.txt", response_class=PlainTextResponse)
 def robots() -> str:
     base = _public_base_url()
-    return f"User-agent: *\\nAllow: /\\nSitemap: {base}/sitemap.xml\\n"
+    return f"User-agent: *\nAllow: /\nSitemap: {base}/sitemap.xml\n"
 
 
 @app.get("/sitemap.xml")
