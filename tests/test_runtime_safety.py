@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 
 from app.config.runtime import RuntimeFlags
@@ -24,27 +26,29 @@ def test_invalid_flag_is_rejected(monkeypatch):
         RuntimeFlags.from_env()
 
 
-@pytest.mark.asyncio
-async def test_retry_eventually_succeeds():
+def test_retry_eventually_succeeds():
     calls = 0
+
     async def operation():
         nonlocal calls
         calls += 1
         if calls < 3:
             raise RuntimeError("temporary")
         return "ok"
-    result = await with_retry(operation, RetryPolicy(attempts=3, base_delay_seconds=0, max_delay_seconds=0))
+
+    result = asyncio.run(with_retry(operation, RetryPolicy(attempts=3, base_delay_seconds=0, max_delay_seconds=0)))
     assert result == "ok"
     assert calls == 3
 
 
-@pytest.mark.asyncio
-async def test_retry_is_bounded():
+def test_retry_is_bounded():
     calls = 0
+
     async def operation():
         nonlocal calls
         calls += 1
         raise RuntimeError("persistent")
+
     with pytest.raises(RuntimeError):
-        await with_retry(operation, RetryPolicy(attempts=2, base_delay_seconds=0, max_delay_seconds=0))
+        asyncio.run(with_retry(operation, RetryPolicy(attempts=2, base_delay_seconds=0, max_delay_seconds=0)))
     assert calls == 2
