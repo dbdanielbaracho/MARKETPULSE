@@ -61,3 +61,20 @@ PR #59 passed both required jobs before merge:
 7. A controlled editorial dry run using a real evidence-qualified candidate.
 
 These blockers require owner, partner, platform, or professional decisions. They must not be bypassed by configuration defaults.
+
+
+## Official domain validation — 0.27.1
+
+Validated at 2026-08-22 19:15 UTC.
+
+- `https://predibeacon.com/`: HTTP 200 over HTTPS.
+- `/health`: version 0.27.1, status `ok`.
+- canonical: `https://predibeacon.com/`.
+- `robots.txt`: sitemap points to `https://predibeacon.com/sitemap.xml`.
+- sitemap locations use the official apex origin.
+- `https://www.predibeacon.com/api/v1/markets?limit=1`: HTTP 308 to the identical path and query at `https://predibeacon.com`.
+- Kalshi: 100 markets; Polymarket: 100 markets; freshness: `fresh`.
+- persistent storage remained writable and retained identity `fcb833b0327b062c3335f8b95e1dd636` across the domain deploy.
+- automated publishing and social distribution remained disabled.
+
+The Railway technical domain remains available for infrastructure purposes but is not the configured public canonical origin.
