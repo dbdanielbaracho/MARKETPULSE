@@ -8,11 +8,11 @@ This registry is the scope-control source of truth. A requirement may not disapp
 | MP-002 | Configuration-first; avoid legitimate business variation in hardcode | IN_PROGRESS | versioned config + validation |
 | MP-003 | USA first active market | VERIFIED | US country pack |
 | MP-004 | Architecture prepared for UK and Brazil | VERIFIED | disabled UK/BR country packs |
-| MP-005 | Kalshi public-data ingestion | VERIFIED | normalized adapter + tests |
-| MP-006 | Polymarket public-data ingestion | VERIFIED | normalized adapter + tests |
+| MP-005 | Kalshi public-data ingestion | VERIFIED | current decimal-schema adapter, tests, and live count evidence |
+| MP-006 | Polymarket public-data ingestion | VERIFIED | normalized adapter, tests, and live count evidence |
 | MP-007 | Normalized market model | VERIFIED | domain model + tests |
 | MP-008 | Snapshot history | VERIFIED | SQLite WAL snapshot store + tests |
-| MP-009 | Movers/trending discovery | IN_PROGRESS | runtime ingestion + snapshots + signal engine + ranking API + dynamic UI; live deployment evidence pending |
+| MP-009 | Movers/trending discovery | VERIFIED | runtime ranking API/UI and reproducible production evidence in `docs/LIVE_EVIDENCE.md` |
 | MP-010 | Market equivalence must not be inferred from title similarity alone | IN_PROGRESS | fail-safe contract matcher + adversarial tests; CI/release evidence pending |
 | MP-011 | Market comparison UI with explicit non-equivalence handling | REQUIRED | UX + matching gate |
 | MP-012 | News/evidence context engine | IN_PROGRESS | provenance model + canonical URL dedupe + explicit freshness states + source diversity gate; collectors/UI pending |
@@ -28,11 +28,11 @@ This registry is the scope-control source of truth. A requirement may not disapp
 | MP-022 | Partner revenue states: pending/approved/payable/paid/reversed etc. | IN_PROGRESS | explicit guarded state machine + tests; persistence/reconciliation pending |
 | MP-023 | Revenue dashboard; no unnecessary user-funds accounting | REQUIRED | dashboard/reconciliation |
 | MP-024 | Mobile-first, simple, accessible website | IN_PROGRESS | dynamic baseline UI; usability/accessibility audit pending |
-| MP-025 | Search and category discovery | IN_PROGRESS | runtime read-model now feeds dynamic API/UI; deployed live-data E2E pending |
+| MP-025 | Search and category discovery | VERIFIED | deployed API/UI filters with production evidence in `docs/LIVE_EVIDENCE.md` |
 | MP-026 | Freshness displayed honestly; never claim live without evidence | IN_PROGRESS | timestamp UI + evidence freshness states (fresh/stale/future/undated); E2E stale-state pending |
 | MP-027 | GitHub PR + CI gates | VERIFIED | repository workflow |
 | MP-028 | Railway staging with deterministic healthcheck | VERIFIED | Docker deployment + /health |
-| MP-029 | Secrets never committed | REQUIRED | secret scanning/config gate |
+| MP-029 | Secrets never committed | VERIFIED | pinned Gitleaks CI gate scans full Git history on pushes and PRs |
 | MP-030 | Observability, retries, timeouts, rate-limit handling | IN_PROGRESS | transient-only retries for 429/5xx/network, bounded timeouts, structured refresh logs/status and failure isolation; metrics dashboard pending |
 | MP-031 | Feature flags and kill switches for external venues/publishing | VERIFIED | fail-closed runtime flags + worker enforcement + tests |
 | MP-032 | Partner economics never invented; require evidence/config | IN_PROGRESS | router requires commercial_verified; commission amount absent unless supplied by partner evidence; config validation pending |
