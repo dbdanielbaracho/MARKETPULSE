@@ -62,6 +62,7 @@ This registry is the scope-control source of truth. A requirement may not disapp
 | MP-056 | Public responses receive baseline browser security protections | VERIFIED | global nosniff, referrer, permissions, opener and HSTS headers; protected APIs force `no-store`; regression tests implemented |
 | MP-057 | Commercial API keys support auditable revocation and atomic rotation | VERIFIED | metadata-only listing, immediate revocation, transactional replacement, preserved scopes/limits and adversarial tests implemented |
 | MP-058 | Requests are traceable without trusting arbitrary caller identifiers | VERIFIED | bounded validated/generated request IDs, response timing, 1 MiB declared write limit and regression tests implemented |
+| MP-059 | Persistent SQLite data has verified online backups and bounded retention | VERIFIED | startup/daily online backup worker on `/data`, integrity-checked copies, 1–90 retention bounds, protected manual controls and restore regression tests implemented |
 
 ## Change-control rule
 
