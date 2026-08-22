@@ -34,7 +34,7 @@ from app.storage.content_queue import ContentQueueStore, PersistenceProbe
 from app.storage.revenue import RevenueStore
 from app.storage.snapshots import SnapshotStore
 
-APP_VERSION = "0.29.1"
+APP_VERSION = "0.30.0"
 
 
 class DiscoveryMarket(BaseModel):
