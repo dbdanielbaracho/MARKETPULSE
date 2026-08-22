@@ -63,6 +63,9 @@ This registry is the scope-control source of truth. A requirement may not disapp
 | MP-057 | Commercial API keys support auditable revocation and atomic rotation | VERIFIED | metadata-only listing, immediate revocation, transactional replacement, preserved scopes/limits and adversarial tests implemented |
 | MP-058 | Requests are traceable without trusting arbitrary caller identifiers | VERIFIED | bounded validated/generated request IDs, response timing, 1 MiB declared write limit and regression tests implemented |
 | MP-059 | Persistent SQLite data has verified online backups and bounded retention | VERIFIED | startup/daily online backup worker on `/data`, integrity-checked copies, 1–90 retention bounds, protected manual controls and restore regression tests implemented |
+| MP-060 | Critical release journeys have deterministic end-to-end regression coverage | VERIFIED | discovery → campaign → internal detail → outbound attribution → creator accounting and API key creation/rotation are tested without external network access |
+| MP-061 | SQLite write concurrency cannot silently lose commercial API quota increments | VERIFIED | 60 concurrent independent authorizations produce exactly usage counts 1–60 under WAL and atomic `BEGIN IMMEDIATE` accounting |
+| MP-062 | CI detects material in-process API performance regressions without loading production | VERIFIED | 240-request direct-ASGI smoke gate enforces a 250 ms p95 regression budget and explicitly excludes network/SLA claims |
 
 ## Change-control rule
 
