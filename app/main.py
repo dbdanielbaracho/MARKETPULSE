@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import asyncio
+import os
+from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
@@ -8,9 +11,13 @@ from fastapi import FastAPI, Query
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
-APP_VERSION = "0.2.0"
+from app.adapters.kalshi import KalshiAdapter
+from app.adapters.polymarket import PolymarketAdapter
+from app.config.runtime import RuntimeFlags
+from app.services.ingestion import IngestionWorker, RefreshBatch
+from app.storage.snapshots import SnapshotStore
 
-app = FastAPI(title="MarketPulse", version=APP_VERSION)
+APP_VERSION = "0.3.0"
 
 
 class DiscoveryMarket(BaseModel):
@@ -26,12 +33,86 @@ class DiscoveryMarket(BaseModel):
 
 
 _DISCOVERY: list[DiscoveryMarket] = []
+_LAST_REFRESH_AT: datetime | None = None
+_LAST_REFRESH_ERRORS: tuple[str, ...] = ()
 
 
 def set_discovery_markets(markets: list[DiscoveryMarket]) -> None:
     """Replace the current read model atomically at process level."""
     global _DISCOVERY
     _DISCOVERY = list(markets)
+
+
+def publish_refresh_batch(batch: RefreshBatch) -> None:
+    """Publish a complete successful/partial batch without erasing good data on total failure."""
+    global _LAST_REFRESH_AT, _LAST_REFRESH_ERRORS
+    _LAST_REFRESH_AT = datetime.now(timezone.utc)
+    _LAST_REFRESH_ERRORS = batch.errors
+    if not batch.markets:
+        return
+    signal_by_id = {item.canonical_id: item for item in batch.signals}
+    items = []
+    for market in batch.markets:
+        item = signal_by_id[market.canonical_id]
+        items.append(
+            DiscoveryMarket(
+                canonical_id=market.canonical_id,
+                title=market.title,
+                venue=market.venue,
+                category=market.category,
+                probability=item.probability,
+                probability_change=item.probability_change,
+                volume_usd=item.volume_usd,
+                trend_score=item.trend_score,
+                observed_at=market.observed_at,
+            )
+        )
+    set_discovery_markets(items)
+
+
+def _refresh_interval() -> float:
+    raw = os.getenv("MP_REFRESH_INTERVAL_SECONDS", "300")
+    try:
+        value = float(raw)
+    except ValueError as exc:
+        raise ValueError("MP_REFRESH_INTERVAL_SECONDS must be numeric") from exc
+    if value < 30 or value > 86_400:
+        raise ValueError("MP_REFRESH_INTERVAL_SECONDS must be between 30 and 86400")
+    return value
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    flags = RuntimeFlags.from_env()
+    store = SnapshotStore(os.getenv("MP_DATABASE_PATH", "/tmp/marketpulse.db"))
+    worker = IngestionWorker(
+        store=store,
+        flags=flags,
+        kalshi=KalshiAdapter(os.getenv("MP_KALSHI_BASE_URL", "https://external-api.kalshi.com/trade-api/v2")),
+        polymarket=PolymarketAdapter(os.getenv("MP_POLYMARKET_BASE_URL", "https://gamma-api.polymarket.com")),
+    )
+    stop = asyncio.Event()
+    task = asyncio.create_task(
+        worker.run_forever(
+            interval_seconds=_refresh_interval(),
+            publish=publish_refresh_batch,
+            stop=stop,
+        ),
+        name="marketpulse-ingestion",
+    )
+    try:
+        yield
+    finally:
+        stop.set()
+        try:
+            await asyncio.wait_for(task, timeout=3)
+        except TimeoutError:
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
+
+
+app = FastAPI(title="MarketPulse", version=APP_VERSION, lifespan=lifespan)
 
 
 @app.get("/health")
@@ -41,12 +122,14 @@ def health() -> dict[str, str]:
 
 
 @app.get("/api/v1/status")
-def status() -> dict[str, str]:
+def status() -> dict[str, str | None]:
     return {
         "service": "marketpulse-web",
         "version": APP_VERSION,
         "country": "US",
         "generated_at": datetime.now(timezone.utc).isoformat(),
+        "last_refresh_at": _LAST_REFRESH_AT.isoformat() if _LAST_REFRESH_AT else None,
+        "last_refresh_errors": ",".join(_LAST_REFRESH_ERRORS) or None,
     }
 
 
