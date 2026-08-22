@@ -14,7 +14,7 @@ class KalshiAdapter:
         self.timeout_seconds = timeout_seconds
 
     async def fetch_markets(self, limit: int = 100, cursor: str | None = None) -> tuple[list[NormalizedMarket], str | None]:
-        params: dict[str, Any] = {"limit": limit, "status": "open"}
+        params: dict[str, Any] = {"limit": limit, "status": "open", "mve_filter": "exclude"}
         if cursor:
             params["cursor"] = cursor
         async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
