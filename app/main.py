@@ -17,7 +17,7 @@ from app.config.runtime import RuntimeFlags
 from app.services.ingestion import IngestionWorker, RefreshBatch
 from app.storage.snapshots import SnapshotStore
 
-APP_VERSION = "0.3.0"
+APP_VERSION = "0.3.1"
 
 
 class DiscoveryMarket(BaseModel):
@@ -88,7 +88,7 @@ async def lifespan(_: FastAPI):
     worker = IngestionWorker(
         store=store,
         flags=flags,
-        kalshi=KalshiAdapter(os.getenv("MP_KALSHI_BASE_URL", "https://external-api.kalshi.com/trade-api/v2")),
+        kalshi=KalshiAdapter(os.getenv("MP_KALSHI_BASE_URL", "https://api.elections.kalshi.com/trade-api/v2")),
         polymarket=PolymarketAdapter(os.getenv("MP_POLYMARKET_BASE_URL", "https://gamma-api.polymarket.com")),
     )
     stop = asyncio.Event()
@@ -122,7 +122,11 @@ def health() -> dict[str, str]:
 
 
 @app.get("/api/v1/status")
-def status() -> dict[str, str | None]:
+def status() -> dict[str, object]:
+    venue_counts = {
+        venue: sum(1 for item in _DISCOVERY if item.venue == venue)
+        for venue in ("kalshi", "polymarket")
+    }
     return {
         "service": "marketpulse-web",
         "version": APP_VERSION,
@@ -130,6 +134,7 @@ def status() -> dict[str, str | None]:
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "last_refresh_at": _LAST_REFRESH_AT.isoformat() if _LAST_REFRESH_AT else None,
         "last_refresh_errors": ",".join(_LAST_REFRESH_ERRORS) or None,
+        "venue_market_counts": venue_counts,
     }
 
 

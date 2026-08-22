@@ -36,3 +36,17 @@ def test_polymarket_bad_prices_fail_soft():
         "outcomePrices": "not-json",
     })
     assert market.yes_probability is None
+
+
+def test_kalshi_normalizes_current_decimal_fields():
+    market = KalshiAdapter.normalize({
+        "ticker": "FED-DECIMAL",
+        "title": "Will the current Kalshi schema work?",
+        "yes_bid_dollars": "0.6400",
+        "yes_ask_dollars": "0.6600",
+        "last_price_dollars": "0.6500",
+        "volume_fp": "1234.50",
+        "close_time": "2026-09-18T18:00:00Z",
+    })
+    assert market.yes_probability == 0.65
+    assert market.volume_usd == 1234.5
