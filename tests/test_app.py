@@ -18,6 +18,8 @@ def test_status_exposes_country_and_version():
     assert response.status_code == 200
     assert payload["country"] == "US"
     assert payload["version"]
+    assert payload["freshness"] in {"fresh", "stale", "future", "unavailable"}
+    assert payload["stale_after_seconds"] >= 60
 
 
 def test_home_has_accessible_discovery_controls():
