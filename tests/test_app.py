@@ -80,3 +80,20 @@ def test_public_base_url_must_be_origin_only_https(monkeypatch):
     monkeypatch.setenv("MP_PUBLIC_BASE_URL", "http://example.com/path?unsafe=1")
     with pytest.raises(ValueError):
         main._public_base_url()
+
+
+def test_www_redirects_to_canonical_origin_without_losing_path_or_query():
+    response = client.get(
+        "/api/v1/markets?limit=1",
+        headers={"host": "www.predibeacon.com"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 308
+    assert response.headers["location"] == (
+        "https://marketpulse-production-aa9f.up.railway.app/api/v1/markets?limit=1"
+    )
+
+
+def test_non_www_hosts_are_not_redirected():
+    response = client.get("/health", headers={"host": "predibeacon.com"}, follow_redirects=False)
+    assert response.status_code == 200
