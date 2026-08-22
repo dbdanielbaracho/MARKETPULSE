@@ -19,10 +19,10 @@ This registry is the scope-control source of truth. A requirement may not disapp
 | MP-013 | Automated AI content candidates | IN_PROGRESS | evidence-gated classifier, durable audited queue, immutable snapshots, citation-locked drafts and opt-in OpenAI Structured Outputs provider with Luna default, reasoning disabled, output cap and daily draft limit; credential/model verification passed in production, first evidence-diverse AI draft pending |
 | MP-014 | Automated website publishing | IN_PROGRESS | fail-closed authenticated review plus manual publication API, immutable version/citations, public article views and audited rollback; production publishing UI, scheduling and automated worker remain pending |
 | MP-015 | SEO automation | VERIFIED | canonical, Open Graph, JSON-LD, valid robots.txt and sitemap with tests/live evidence |
-| MP-016 | Instagram distribution | REQUIRED | provider/policy integration |
-| MP-017 | TikTok distribution | REQUIRED | provider/policy integration |
-| MP-018 | Telegram distribution | REQUIRED | provider integration |
-| MP-019 | WhatsApp distribution where channel policy permits | REQUIRED | policy + provider integration |
+| MP-016 | Instagram distribution | IN_PROGRESS | fail-closed credential, authorization, country, contract and editorial readiness gates; provider integration pending |
+| MP-017 | TikTok distribution | IN_PROGRESS | fail-closed credential, authorization, country, contract and editorial readiness gates; provider integration pending |
+| MP-018 | Telegram distribution | IN_PROGRESS | fail-closed readiness gate; bot/provider integration pending |
+| MP-019 | WhatsApp distribution where channel policy permits | IN_PROGRESS | fail-closed readiness gate; policy approval and provider integration pending |
 | MP-020 | Outbound router is country/partner/market aware and fail-closed | IN_PROGRESS | server-side route IDs, HTTPS allowlist, commercial verification and public country-policy gate; all US/BR commercial actions remain disabled until written authorization; market-level eligibility/UI pending |
 | MP-021 | Partner attribution | IN_PROGRESS | attribution/revenue state model exists; click persistence + partner event reconciliation pending |
 | MP-022 | Partner revenue states: pending/approved/payable/paid/reversed etc. | IN_PROGRESS | explicit guarded state machine + tests; persistence/reconciliation pending |
