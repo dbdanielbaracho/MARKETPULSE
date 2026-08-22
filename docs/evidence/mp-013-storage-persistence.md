@@ -13,13 +13,20 @@ Requirement: MP-013 durable content queue storage.
 - Automated publishing enabled: false
 - Queue counts: all zero
 
-## Stage 2 — redeployment
+## Stage 2 — clean redeployment
 
-Pending. The merge of this evidence document intentionally triggers a clean Railway deployment. Validation passes only if the public status subsequently reports:
+- Observed at: 2026-08-22T15:19:54Z
+- Application version: 0.11.0
+- Storage writable: true
+- Persistent volume configured: true
+- Storage identity: `fcb833b0327b062c3335f8b95e1dd636` (unchanged)
+- Startup count: 2 (incremented from 1)
+- First startup timestamp: unchanged
+- Automated publishing enabled: false
+- Queue counts: all zero
 
-1. the same storage identity;
-2. a startup count greater than 1;
-3. writable storage and persistent volume configuration still true;
-4. automated publishing still false.
+## Result
 
-No content candidate is created and no publication capability is enabled by this test.
+**Passed.** The unchanged identity and incremented startup count prove that the same writable SQLite database survived a clean Railway deployment on the mounted Volume.
+
+No content candidate was created and no publication capability was enabled by this test.
