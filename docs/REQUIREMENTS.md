@@ -24,9 +24,9 @@ This registry is the scope-control source of truth. A requirement may not disapp
 | MP-018 | Telegram distribution | IN_PROGRESS | fail-closed readiness gate; bot/provider integration pending |
 | MP-019 | WhatsApp distribution where channel policy permits | IN_PROGRESS | fail-closed readiness gate; policy approval and provider integration pending |
 | MP-020 | Outbound router is country/partner/market aware and fail-closed | IN_PROGRESS | server-side route IDs, HTTPS allowlist, commercial verification and public country-policy gate; all US/BR commercial actions remain disabled until written authorization; market-level eligibility/UI pending |
-| MP-021 | Partner attribution | IN_PROGRESS | attribution/revenue state model exists; click persistence + partner event reconciliation pending |
-| MP-022 | Partner revenue states: pending/approved/payable/paid/reversed etc. | IN_PROGRESS | explicit guarded state machine + tests; persistence/reconciliation pending |
-| MP-023 | Revenue dashboard; no unnecessary user-funds accounting | REQUIRED | dashboard/reconciliation |
+| MP-021 | Partner attribution | IN_PROGRESS | durable idempotent click ledger and audit history implemented; commercial intake remains disabled and partner adapter pending |
+| MP-022 | Partner revenue states: pending/approved/payable/paid/reversed etc. | IN_PROGRESS | guarded state machine plus durable idempotent partner-event transitions and audit log; live partner reconciliation pending |
+| MP-023 | Revenue dashboard; no unnecessary user-funds accounting | IN_PROGRESS | authenticated dashboard counts states and only partner-reported currency amounts; truthful zero-state/live evidence pending |
 | MP-024 | Mobile-first, simple, accessible website | VERIFIED | responsive UI and trust pages; live 0.28.1 DOM audit confirmed language/title/main/h1/skip link, explicit field names, 44px targets, focus rule, unique IDs and no horizontal overflow |
 | MP-025 | Search and category discovery | VERIFIED | deployed API/UI filters with production evidence in `docs/LIVE_EVIDENCE.md` |
 | MP-026 | Freshness displayed honestly; never claim live without evidence | VERIFIED | bounded freshness states, UI banner, tests and live Railway evidence |

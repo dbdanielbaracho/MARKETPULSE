@@ -29,9 +29,10 @@ from app.services.ingestion import IngestionWorker, RefreshBatch
 from app.services.matching import MarketContractFacts, decide_match
 from app.services.social_distribution import all_channel_readiness
 from app.storage.content_queue import ContentQueueStore, PersistenceProbe
+from app.storage.revenue import RevenueStore
 from app.storage.snapshots import SnapshotStore
 
-APP_VERSION = "0.28.1"
+APP_VERSION = "0.29.0"
 
 
 class DiscoveryMarket(BaseModel):
@@ -559,6 +560,11 @@ def operations_snapshot() -> dict[str, object]:
     return {"overall": overall, "generated_at": snapshot["generated_at"], "checks": checks, "status": snapshot}
 
 
+@app.get("/api/v1/admin/revenue", dependencies=[Depends(_require_admin)])
+def revenue_snapshot() -> dict[str, object]:
+    return RevenueStore(_database_path()).summary()
+
+
 @app.get("/api/v1/policy")
 def country_policy(country: str | None = Query(default=None, min_length=2, max_length=2)) -> dict[str, object]:
     policy = resolve_country_policy(country)
@@ -590,6 +596,29 @@ def social_readiness(
         }
         for item in all_channel_readiness(country)
     ]
+
+
+@app.get("/admin/revenue", response_class=HTMLResponse, include_in_schema=False)
+def revenue_page() -> HTMLResponse:
+    nonce = token_urlsafe(18)
+    template = Path(__file__).parent / "templates" / "revenue.html"
+    body = template.read_text(encoding="utf-8").replace("__CSP_NONCE__", nonce)
+    return HTMLResponse(
+        body,
+        headers={
+            "Cache-Control": "no-store",
+            "Content-Security-Policy": (
+                "default-src 'none'; "
+                f"script-src 'nonce-{nonce}'; "
+                f"style-src 'nonce-{nonce}'; "
+                "connect-src 'self'; img-src 'none'; font-src 'none'; "
+                "frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+            ),
+            "Referrer-Policy": "no-referrer",
+            "X-Content-Type-Options": "nosniff",
+            "X-Frame-Options": "DENY",
+        },
+    )
 
 
 @app.get("/admin/operations", response_class=HTMLResponse, include_in_schema=False)
