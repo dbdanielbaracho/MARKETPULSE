@@ -23,7 +23,7 @@ This registry is the scope-control source of truth. A requirement may not disapp
 | MP-017 | TikTok distribution | REQUIRED | provider/policy integration |
 | MP-018 | Telegram distribution | REQUIRED | provider integration |
 | MP-019 | WhatsApp distribution where channel policy permits | REQUIRED | policy + provider integration |
-| MP-020 | Outbound router is country/partner/market aware and fail-closed | IN_PROGRESS | server-side route IDs + HTTPS host allowlist + commercial verification gate; market-level eligibility/UI pending |
+| MP-020 | Outbound router is country/partner/market aware and fail-closed | IN_PROGRESS | server-side route IDs, HTTPS allowlist, commercial verification and public country-policy gate; all US/BR commercial actions remain disabled until written authorization; market-level eligibility/UI pending |
 | MP-021 | Partner attribution | IN_PROGRESS | attribution/revenue state model exists; click persistence + partner event reconciliation pending |
 | MP-022 | Partner revenue states: pending/approved/payable/paid/reversed etc. | IN_PROGRESS | explicit guarded state machine + tests; persistence/reconciliation pending |
 | MP-023 | Revenue dashboard; no unnecessary user-funds accounting | REQUIRED | dashboard/reconciliation |
@@ -36,7 +36,7 @@ This registry is the scope-control source of truth. A requirement may not disapp
 | MP-030 | Observability, retries, timeouts, rate-limit handling | IN_PROGRESS | retries/timeouts plus freshness, source errors, content queue state counts and venue counts in status; operational dashboard pending |
 | MP-031 | Feature flags and kill switches for external venues/publishing | VERIFIED | fail-closed runtime flags + worker enforcement + tests |
 | MP-032 | Partner economics never invented; require evidence/config | IN_PROGRESS | router requires commercial_verified; commission amount absent unless supplied by partner evidence; config validation pending |
-| MP-033 | Global-ready locale/currency/timezone/policy boundaries | IN_PROGRESS | country packs; runtime localization pending |
+| MP-033 | Global-ready locale/currency/timezone/policy boundaries | IN_PROGRESS | country packs plus explicit US, Brazil and unknown-country policy boundaries; runtime localization pending |
 | MP-034 | Future integration path with broader global platform preserved | REQUIRED | bounded interfaces/ADR |
 | MP-035 | Final evidence audit: requirement -> code -> config -> test -> result | REQUIRED | release checklist |
 
