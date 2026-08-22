@@ -7,6 +7,7 @@ import time
 import html
 import json
 import os
+import re
 from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timedelta, timezone
 from itertools import groupby
@@ -39,7 +40,7 @@ from app.storage.content_queue import ContentQueueStore, PersistenceProbe
 from app.storage.revenue import RevenueStore
 from app.storage.snapshots import SnapshotStore
 
-APP_VERSION = "0.35.0"
+APP_VERSION = "0.36.0"
 
 
 class DiscoveryMarket(BaseModel):
@@ -54,6 +55,7 @@ class DiscoveryMarket(BaseModel):
     observed_at: datetime
     closes_at: datetime | None = None
     source_url: str | None = None
+    slug: str | None = Field(default=None, min_length=8, max_length=180)
 
 
 class EvidenceView(BaseModel):
@@ -81,6 +83,15 @@ class MarketComparison(BaseModel):
     equivalent_contracts: bool
     reasons: list[str]
     warning: str
+
+
+class MarketRouteView(BaseModel):
+    market_id: str
+    venue: Literal["kalshi", "polymarket"]
+    available: bool
+    mode: Literal["partner", "organic", "unavailable"]
+    outbound_url: str | None
+    reason: str
 
 
 class SnapshotPoint(BaseModel):
@@ -214,10 +225,19 @@ def _evidence_bundle(market: DiscoveryMarket) -> EvidenceBundle:
     return EvidenceBundle(market_id=market.canonical_id, items=items).deduplicated()
 
 
+def _market_slug(title: str, canonical_id: str) -> str:
+    words = re.sub(r"[^a-z0-9]+", "-", title.casefold()).strip("-")[:120] or "market"
+    suffix = hashlib.sha256(canonical_id.encode("utf-8")).hexdigest()[:10]
+    return f"{words}-{suffix}"
+
+
 def set_discovery_markets(markets: list[DiscoveryMarket]) -> None:
-    """Replace the current read model atomically at process level."""
+    """Replace the current read model atomically and give every market a stable path."""
     global _DISCOVERY
-    _DISCOVERY = list(markets)
+    _DISCOVERY = [
+        item if item.slug else item.model_copy(update={"slug": _market_slug(item.title, item.canonical_id)})
+        for item in markets
+    ]
 
 
 def publish_refresh_batch(batch: RefreshBatch) -> None:
@@ -1147,6 +1167,34 @@ def market_detail(market_id: str = Query(min_length=1, max_length=200)) -> Disco
     return _market_by_id(market_id)
 
 
+def _market_route(market: DiscoveryMarket) -> MarketRouteView:
+    if not market.source_url:
+        return MarketRouteView(market_id=market.canonical_id, venue=market.venue, available=False, mode="unavailable", outbound_url=None, reason="missing_destination")
+    parsed = urlsplit(market.source_url)
+    allowed_hosts = {
+        "kalshi": {"kalshi.com", "www.kalshi.com"},
+        "polymarket": {"polymarket.com", "www.polymarket.com"},
+    }
+    if parsed.scheme != "https" or (parsed.hostname or "").lower() not in allowed_hosts[market.venue]:
+        return MarketRouteView(market_id=market.canonical_id, venue=market.venue, available=False, mode="unavailable", outbound_url=None, reason="unverified_destination")
+    verified = os.getenv(f"MP_{market.venue.upper()}_COMMERCIAL_VERIFIED", "false").strip().casefold() in {"1", "true", "yes", "on"}
+    partner_id = os.getenv(f"MP_{market.venue.upper()}_PARTNER_ID", "").strip()
+    mode = "partner" if verified and partner_id else "organic"
+    return MarketRouteView(
+        market_id=market.canonical_id,
+        venue=market.venue,
+        available=True,
+        mode=mode,
+        outbound_url=f"/out/{market.venue}?{urlencode({'market_id': market.canonical_id})}",
+        reason="verified_partner_route" if mode == "partner" else "verified_organic_route",
+    )
+
+
+@app.get("/api/v1/market/route", response_model=MarketRouteView)
+def market_route(market_id: str = Query(min_length=1, max_length=200)) -> MarketRouteView:
+    return _market_route(_market_by_id(market_id))
+
+
 @app.post(
     "/api/v1/admin/api-keys",
     response_model=ApiKeyCreateResponse,
@@ -1207,7 +1255,8 @@ def campaign_entry(slug: str) -> RedirectResponse:
     query = {"market_id": item.market_id, "campaign_id": item.slug, "channel": item.channel}
     if item.creator_id:
         query["creator_id"] = item.creator_id
-    return RedirectResponse(url=f"/market?{urlencode(query)}", status_code=302)
+    market = _market_by_id(item.market_id)
+    return RedirectResponse(url=f"/markets/{market.slug}?{urlencode({key: value for key, value in query.items() if key != 'market_id'})}", status_code=302)
 
 
 @app.get("/api/v1/creators/{creator_id}/markets")
@@ -1398,11 +1447,22 @@ def watchlist_page() -> HTMLResponse:
     )
 
 
-@app.get("/market", response_class=HTMLResponse)
-def market_page() -> HTMLResponse:
+def _render_market_page(market_id: str | None, canonical_path: str | None = None) -> HTMLResponse:
     nonce = token_urlsafe(18)
     template = Path(__file__).parent / "templates" / "market.html"
     body = template.read_text(encoding="utf-8").replace("__CSP_NONCE__", nonce)
+    body = body.replace("__MARKET_ID__", html.escape(market_id or "", quote=True))
+    if market_id:
+        market = _market_by_id(market_id)
+        canonical = f"{_public_base_url()}{canonical_path or f'/markets/{market.slug}'}"
+        seo = (
+            f'<link rel="canonical" href="{html.escape(canonical, quote=True)}">'
+            f'<meta property="og:type" content="article">'
+            f'<meta property="og:title" content="{html.escape(market.title, quote=True)} — PrediBeacon">'
+            f'<meta property="og:description" content="Probability, movement, evidence and related prediction markets.">'
+            f'<meta property="og:url" content="{html.escape(canonical, quote=True)}">'
+        )
+        body = body.replace("</head>", f"{seo}</head>")
     return HTMLResponse(
         body,
         headers={
@@ -1417,6 +1477,19 @@ def market_page() -> HTMLResponse:
             "X-Content-Type-Options": "nosniff",
         },
     )
+
+
+@app.get("/market", response_class=HTMLResponse)
+def market_page(market_id: str | None = Query(default=None, max_length=200)) -> HTMLResponse:
+    return _render_market_page(market_id)
+
+
+@app.get("/markets/{slug}", response_class=HTMLResponse)
+def canonical_market_page(slug: str) -> HTMLResponse:
+    market = next((item for item in _DISCOVERY if item.slug == slug), None)
+    if market is None:
+        raise HTTPException(status_code=404, detail="market not found")
+    return _render_market_page(market.canonical_id, f"/markets/{slug}")
 
 
 @app.get("/out/{venue}")
@@ -1519,11 +1592,16 @@ def robots() -> str:
 @app.get("/sitemap.xml")
 def sitemap() -> Response:
     base = html.escape(_public_base_url(), quote=True)
+    market_urls = "".join(
+        f"<url><loc>{base}/markets/{html.escape(item.slug or '', quote=True)}</loc><changefreq>hourly</changefreq></url>"
+        for item in _DISCOVERY
+        if item.slug
+    )
     body = (
         '<?xml version="1.0" encoding="UTF-8"?>'
         '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
         f"<url><loc>{base}/</loc><changefreq>hourly</changefreq></url>"
-        "</urlset>"
+        f"{market_urls}</urlset>"
     )
     return Response(body, media_type="application/xml")
 
