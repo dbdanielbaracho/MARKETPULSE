@@ -1,0 +1,44 @@
+from datetime import datetime, timedelta, timezone
+
+from app.services.intelligence import MarketSnapshot, probability_change, signal, trend_score
+from app.storage.snapshots import SnapshotStore
+
+
+def make_snapshot(probability: float, volume: float, minute: int = 0) -> MarketSnapshot:
+    return MarketSnapshot("kalshi:TEST", probability, volume, datetime(2026, 8, 21, 20, minute, tzinfo=timezone.utc))
+
+
+def test_probability_change_is_percentage_point_delta():
+    assert probability_change(make_snapshot(0.67, 1000, 1), make_snapshot(0.54, 1000, 0)) == 0.13
+
+
+def test_first_observation_has_no_fake_change():
+    current = make_snapshot(0.67, 1000)
+    assert probability_change(current, None) is None
+    assert signal(current).probability_change is None
+
+
+def test_trend_score_is_bounded():
+    current = make_snapshot(1.0, 999999)
+    previous = make_snapshot(0.0, 0)
+    assert trend_score(current, previous) == 100.0
+
+
+def test_snapshot_store_returns_previous(tmp_path):
+    store = SnapshotStore(tmp_path / "marketpulse.db")
+    first = make_snapshot(0.54, 1000, 0)
+    second = make_snapshot(0.67, 2000, 1)
+    store.append(first)
+    store.append(second)
+    previous = store.previous(second.canonical_id, second.observed_at.isoformat())
+    assert previous is not None
+    assert previous.probability == 0.54
+
+
+def test_snapshot_insert_is_idempotent(tmp_path):
+    store = SnapshotStore(tmp_path / "marketpulse.db")
+    item = make_snapshot(0.50, 1000)
+    store.append(item)
+    store.append(item)
+    previous = store.previous(item.canonical_id, (item.observed_at + timedelta(seconds=1)).isoformat())
+    assert previous is not None
