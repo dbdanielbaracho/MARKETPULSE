@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.adapters.openai_drafts import AIDraftOutput, OpenAIDraftProvider
+from app.adapters.openai_drafts import AIDraftOutput, AIVerificationOutput, OpenAIDraftProvider
 from app.domain.evidence import EvidenceItem, EvidenceKind
 
 NOW = datetime(2026, 8, 22, tzinfo=timezone.utc)
@@ -76,6 +76,33 @@ def test_openai_draft_fails_closed_on_refusal_or_empty_evidence():
         asyncio.run(provider.generate(market_id="kalshi:rates", evidence=(evidence(),)))
     with pytest.raises(ValueError, match="requires persisted evidence"):
         asyncio.run(provider.generate(market_id="kalshi:rates", evidence=()))
+
+
+def test_openai_provider_verification_uses_minimal_structured_request():
+    responses = FakeResponses(AIVerificationOutput(status="ok"))
+    provider = OpenAIDraftProvider(
+        api_key="test-key",
+        model="gpt-test",
+        responses_client=responses,
+    )
+
+    asyncio.run(provider.verify())
+
+    assert responses.kwargs["model"] == "gpt-test"
+    assert responses.kwargs["store"] is False
+    assert responses.kwargs["max_output_tokens"] == 32
+    assert responses.kwargs["reasoning"] == {"effort": "minimal"}
+    assert responses.kwargs["text_format"] is AIVerificationOutput
+
+
+def test_openai_provider_verification_fails_closed_on_refusal():
+    provider = OpenAIDraftProvider(
+        api_key="test-key",
+        responses_client=FakeResponses(None),
+    )
+
+    with pytest.raises(ValueError, match="verification was refused or incomplete"):
+        asyncio.run(provider.verify())
 
 
 def test_openai_provider_requires_key():
