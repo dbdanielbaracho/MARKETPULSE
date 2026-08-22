@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from enum import StrEnum
 from hashlib import sha256
 from urllib.parse import urlparse
@@ -13,6 +13,13 @@ class EvidenceKind(StrEnum):
     NEWS = "news"
     OFFICIAL = "official"
     RESEARCH = "research"
+
+
+class EvidenceFreshness(StrEnum):
+    FRESH = "fresh"
+    STALE = "stale"
+    FUTURE_DATED = "future_dated"
+    UNDATED = "undated"
 
 
 class EvidenceItem(BaseModel):
@@ -36,9 +43,25 @@ class EvidenceItem(BaseModel):
         return (urlparse(str(self.url)).hostname or "").lower()
 
     @property
+    def canonical_url(self) -> str:
+        parsed = urlparse(str(self.url))
+        path = parsed.path.rstrip("/") or "/"
+        return f"{parsed.scheme.lower()}://{parsed.netloc.lower()}{path}"
+
+    @property
     def evidence_id(self) -> str:
-        digest = sha256(f"{self.url}|{self.published_at}|{self.title}".encode()).hexdigest()[:20]
+        digest = sha256(f"{self.canonical_url}|{self.title.strip().casefold()}".encode()).hexdigest()[:20]
         return f"ev_{digest}"
+
+    def freshness(self, *, max_age: timedelta, now: datetime | None = None) -> EvidenceFreshness:
+        now = now or datetime.now(timezone.utc)
+        if self.published_at is None:
+            return EvidenceFreshness.UNDATED
+        if self.published_at > now + timedelta(minutes=5):
+            return EvidenceFreshness.FUTURE_DATED
+        if now - self.published_at > max_age:
+            return EvidenceFreshness.STALE
+        return EvidenceFreshness.FRESH
 
 
 class EvidenceBundle(BaseModel):
@@ -54,3 +77,9 @@ class EvidenceBundle(BaseModel):
     def latest_published_at(self) -> datetime | None:
         values = [item.published_at for item in self.items if item.published_at is not None]
         return max(values) if values else None
+
+    def deduplicated(self) -> "EvidenceBundle":
+        unique: dict[str, EvidenceItem] = {}
+        for item in self.items:
+            unique.setdefault(item.evidence_id, item)
+        return EvidenceBundle(market_id=self.market_id, generated_at=self.generated_at, items=list(unique.values()))
