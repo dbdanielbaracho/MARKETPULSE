@@ -16,7 +16,7 @@ from app.domain.evidence import EvidenceFreshness, EvidenceItem, EvidenceKind
 MAX_FEED_BYTES = 1_000_000
 MAX_ITEMS_PER_FEED = 50
 _ALLOWED_FEED_HOSTS = {
-    "www.federalreserve.gov", "www.sec.gov", "feeds.npr.org", "feeds.bbci.co.uk",
+    "www.federalreserve.gov", "www.sec.gov", "feeds.npr.org", "feeds.bbci.co.uk", "abcnews.com",
 }
 _TAG_RE = re.compile(r"<[^>]+>")
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
@@ -58,6 +58,8 @@ DEFAULT_TRUSTED_FEEDS = (
     FeedSource("NPR", "https://feeds.npr.org/1001/rss.xml", EvidenceKind.NEWS, ("www.npr.org", "npr.org"), 3),
     FeedSource("BBC News", "https://feeds.bbci.co.uk/news/world/us_and_canada/rss.xml", EvidenceKind.NEWS, ("www.bbc.com", "www.bbc.co.uk"), 3),
     FeedSource("BBC News", "https://feeds.bbci.co.uk/news/business/rss.xml", EvidenceKind.NEWS, ("www.bbc.com", "www.bbc.co.uk"), 3),
+    FeedSource("ABC News", "https://abcnews.com/abcnews/moneyheadlines", EvidenceKind.NEWS, ("abcnews.com",), 3),
+    FeedSource("ABC News", "https://abcnews.com/abcnews/politicsheadlines", EvidenceKind.NEWS, ("abcnews.com",), 3),
 )
 DEFAULT_OFFICIAL_FEEDS = DEFAULT_TRUSTED_FEEDS[:4]
 

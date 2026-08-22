@@ -28,7 +28,7 @@ from app.services.matching import MarketContractFacts, decide_match
 from app.storage.content_queue import ContentQueueStore, PersistenceProbe
 from app.storage.snapshots import SnapshotStore
 
-APP_VERSION = "0.18.0"
+APP_VERSION = "0.19.0"
 
 
 class DiscoveryMarket(BaseModel):

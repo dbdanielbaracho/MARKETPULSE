@@ -110,6 +110,23 @@ def test_news_feed_requires_allowlisted_article_host_and_three_terms():
     assert result["match"][0].kind == EvidenceKind.NEWS
 
 
+def test_abc_business_feed_preserves_news_provenance():
+    now = datetime.now(timezone.utc)
+    source = FeedSource(
+        "ABC News",
+        "https://abcnews.com/abcnews/moneyheadlines",
+        EvidenceKind.NEWS,
+        ("abcnews.com",),
+        3,
+    )
+    payload = f"""<rss><channel><item><title>Federal Reserve cuts interest rates</title><link>https://abcnews.com/Business/federal-reserve-rates</link><pubDate>{now.strftime('%a, %d %b %Y %H:%M:%S GMT')}</pubDate><description>Federal Reserve monetary policy decision.</description></item></channel></rss>""".encode()
+    items = parse_feed(payload, source, now)
+
+    assert len(items) == 1
+    assert items[0].publisher == "ABC News"
+    assert items[0].kind == EvidenceKind.NEWS
+
+
 def test_stale_news_cannot_be_associated():
     now = datetime.now(timezone.utc)
     source = FeedSource("NPR", "https://feeds.npr.org/1001/rss.xml", EvidenceKind.NEWS, ("www.npr.org",), 3)
