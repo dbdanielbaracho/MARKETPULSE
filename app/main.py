@@ -40,7 +40,7 @@ from app.storage.content_queue import ContentQueueStore, PersistenceProbe
 from app.storage.revenue import RevenueStore
 from app.storage.snapshots import SnapshotStore
 
-APP_VERSION = "0.38.0"
+APP_VERSION = "0.39.0"
 
 
 class DiscoveryMarket(BaseModel):
@@ -607,6 +607,22 @@ async def redirect_www_to_canonical(request: Request, call_next):
             target = f"{target}?{request.url.query}"
         return RedirectResponse(url=target, status_code=308)
     return await call_next(request)
+
+
+@app.middleware("http")
+async def public_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault(
+        "Permissions-Policy",
+        "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
+    )
+    response.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
+    response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    if request.url.path.startswith(("/api/v1/admin", "/api/v1/partners")):
+        response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @app.get("/health")
