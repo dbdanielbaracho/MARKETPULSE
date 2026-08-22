@@ -24,8 +24,8 @@ This registry is the scope-control source of truth. A requirement may not disapp
 | MP-018 | Telegram distribution | REQUIRED | provider integration |
 | MP-019 | WhatsApp distribution where channel policy permits | REQUIRED | policy + provider integration |
 | MP-020 | Outbound router is country/partner/market aware and fail-closed | IN_PROGRESS | server-side route IDs + HTTPS host allowlist + commercial verification gate; market-level eligibility/UI pending |
-| MP-021 | Partner attribution | IN_PROGRESS | attribution/revenue state model exists; click persistence + partner event reconciliation pending |
-| MP-022 | Partner revenue states: pending/approved/payable/paid/reversed etc. | IN_PROGRESS | explicit guarded state machine + tests; persistence/reconciliation pending |
+| MP-021 | Partner attribution | IN_PROGRESS | guarded attribution state model + idempotent partner-event persistence/collision detection; click persistence + reconciliation import pending |
+| MP-022 | Partner revenue states: pending/approved/payable/paid/reversed etc. | IN_PROGRESS | explicit guarded state machine + tests; partner-event idempotency added; reconciliation persistence pending |
 | MP-023 | Revenue dashboard; no unnecessary user-funds accounting | REQUIRED | dashboard/reconciliation |
 | MP-024 | Mobile-first, simple, accessible website | IN_PROGRESS | dynamic baseline UI; usability/accessibility audit pending |
 | MP-025 | Search and category discovery | IN_PROGRESS | dynamic API/UI implemented; live worker pending |
