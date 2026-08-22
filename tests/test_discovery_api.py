@@ -141,3 +141,33 @@ def test_market_evidence_bounds_long_venue_titles():
     response = client.get("/api/v1/evidence", params={"market_id": "kalshi:long"})
     assert response.status_code == 200
     assert len(response.json()["items"][0]["title"]) <= 300
+
+
+def test_market_evidence_combines_primary_and_official_sources(monkeypatch):
+    import app.main as main
+    from app.domain.evidence import EvidenceItem, EvidenceKind
+
+    now = datetime.now(timezone.utc)
+    market = DiscoveryMarket(
+        canonical_id="kalshi:fed",
+        title="Federal Reserve monetary policy decision",
+        venue="kalshi",
+        probability=.5,
+        volume_usd=1,
+        trend_score=1,
+        observed_at=now,
+        source_url="https://kalshi.com/markets/fed",
+    )
+    official = EvidenceItem(
+        title="Federal Reserve issues monetary policy statement",
+        url="https://www.federalreserve.gov/newsevents/pressreleases/monetary.htm",
+        publisher="Federal Reserve",
+        kind=EvidenceKind.OFFICIAL,
+        published_at=now,
+        retrieved_at=now,
+    )
+    set_discovery_markets([market])
+    monkeypatch.setattr(main, "_EXTERNAL_EVIDENCE", {market.canonical_id: [official]})
+    payload = client.get("/api/v1/evidence", params={"market_id": market.canonical_id}).json()
+    assert payload["publisher_count"] == 2
+    assert {item["kind"] for item in payload["items"]} == {"venue", "official"}

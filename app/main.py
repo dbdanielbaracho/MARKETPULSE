@@ -16,6 +16,7 @@ from fastapi.responses import HTMLResponse, PlainTextResponse, Response
 from pydantic import BaseModel, Field
 
 from app.adapters.kalshi import KalshiAdapter
+from app.adapters.official_rss import OfficialFeedCollector
 from app.adapters.polymarket import PolymarketAdapter
 from app.config.runtime import RuntimeFlags
 from app.domain.evidence import EvidenceBundle, EvidenceItem, EvidenceKind
@@ -23,7 +24,7 @@ from app.services.ingestion import IngestionWorker, RefreshBatch
 from app.services.matching import MarketContractFacts, decide_match
 from app.storage.snapshots import SnapshotStore
 
-APP_VERSION = "0.7.0"
+APP_VERSION = "0.8.0"
 
 
 class DiscoveryMarket(BaseModel):
@@ -70,6 +71,9 @@ class MarketComparison(BaseModel):
 _DISCOVERY: list[DiscoveryMarket] = []
 _LAST_REFRESH_AT: datetime | None = None
 _LAST_REFRESH_ERRORS: tuple[str, ...] = ()
+_EXTERNAL_EVIDENCE: dict[str, list[EvidenceItem]] = {}
+_LAST_EVIDENCE_REFRESH_AT: datetime | None = None
+_LAST_EVIDENCE_ERRORS: tuple[str, ...] = ()
 
 
 def set_discovery_markets(markets: list[DiscoveryMarket]) -> None:
@@ -136,6 +140,37 @@ def _public_base_url() -> str:
         raise ValueError("MP_PUBLIC_BASE_URL must be an origin-only HTTPS URL")
     return value
 
+def _official_evidence_enabled() -> bool:
+    value = os.getenv("MP_OFFICIAL_EVIDENCE", "true").strip().casefold()
+    if value in {"1", "true", "yes", "on"}:
+        return True
+    if value in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError("MP_OFFICIAL_EVIDENCE must be boolean")
+
+
+def _evidence_refresh_interval() -> float:
+    return _bounded_seconds("MP_EVIDENCE_REFRESH_INTERVAL_SECONDS", 900, 300, 86_400)
+
+
+async def run_official_evidence_forever(stop: asyncio.Event) -> None:
+    global _EXTERNAL_EVIDENCE, _LAST_EVIDENCE_REFRESH_AT, _LAST_EVIDENCE_ERRORS
+    collector = OfficialFeedCollector()
+    while not stop.is_set():
+        if _DISCOVERY:
+            matched, errors = await collector.collect(list(_DISCOVERY))
+            _EXTERNAL_EVIDENCE = matched
+            _LAST_EVIDENCE_ERRORS = errors
+            _LAST_EVIDENCE_REFRESH_AT = datetime.now(timezone.utc)
+            delay = _evidence_refresh_interval()
+        else:
+            delay = 10
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=delay)
+        except TimeoutError:
+            pass
+
+
 def _refresh_interval() -> float:
     return _bounded_seconds("MP_REFRESH_INTERVAL_SECONDS", 300, 30, 86_400)
 
@@ -166,24 +201,29 @@ async def lifespan(_: FastAPI):
         polymarket=PolymarketAdapter(os.getenv("MP_POLYMARKET_BASE_URL", "https://gamma-api.polymarket.com")),
     )
     stop = asyncio.Event()
-    task = asyncio.create_task(
-        worker.run_forever(
-            interval_seconds=_refresh_interval(),
-            publish=publish_refresh_batch,
-            stop=stop,
-        ),
-        name="marketpulse-ingestion",
-    )
+    tasks = [
+        asyncio.create_task(
+            worker.run_forever(
+                interval_seconds=_refresh_interval(),
+                publish=publish_refresh_batch,
+                stop=stop,
+            ),
+            name="marketpulse-ingestion",
+        )
+    ]
+    if _official_evidence_enabled():
+        tasks.append(asyncio.create_task(run_official_evidence_forever(stop), name="marketpulse-official-evidence"))
     try:
         yield
     finally:
         stop.set()
-        try:
-            await asyncio.wait_for(task, timeout=3)
-        except TimeoutError:
-            task.cancel()
-            with suppress(asyncio.CancelledError):
-                await task
+        for task in tasks:
+            try:
+                await asyncio.wait_for(task, timeout=3)
+            except TimeoutError:
+                task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await task
 
 
 app = FastAPI(title="MarketPulse", version=APP_VERSION, lifespan=lifespan)
@@ -213,6 +253,11 @@ def status() -> dict[str, object]:
         "data_age_seconds": round(age_seconds, 3) if age_seconds is not None else None,
         "stale_after_seconds": _stale_after_seconds(),
         "venue_market_counts": venue_counts,
+        "official_evidence_enabled": _official_evidence_enabled(),
+        "official_evidence_last_refresh_at": _LAST_EVIDENCE_REFRESH_AT.isoformat() if _LAST_EVIDENCE_REFRESH_AT else None,
+        "official_evidence_errors": ",".join(_LAST_EVIDENCE_ERRORS) or None,
+        "official_evidence_market_count": len(_EXTERNAL_EVIDENCE),
+        "official_evidence_item_count": sum(len(items) for items in _EXTERNAL_EVIDENCE.values()),
     }
 
 
@@ -271,6 +316,7 @@ def market_evidence(
                 summary="Primary contract page supplied by the prediction-market venue.",
             )
         )
+    items.extend(_EXTERNAL_EVIDENCE.get(market_id, ()))
     bundle = EvidenceBundle(market_id=market_id, items=items).deduplicated()
     max_age = timedelta(hours=72)
     return MarketEvidenceResponse(
