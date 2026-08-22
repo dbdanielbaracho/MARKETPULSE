@@ -8,7 +8,7 @@ from itertools import groupby
 from pathlib import Path
 from typing import Literal
 
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
@@ -16,9 +16,10 @@ from app.adapters.kalshi import KalshiAdapter
 from app.adapters.polymarket import PolymarketAdapter
 from app.config.runtime import RuntimeFlags
 from app.services.ingestion import IngestionWorker, RefreshBatch
+from app.services.matching import MarketContractFacts, decide_match
 from app.storage.snapshots import SnapshotStore
 
-APP_VERSION = "0.3.3"
+APP_VERSION = "0.4.0"
 
 
 class DiscoveryMarket(BaseModel):
@@ -31,6 +32,16 @@ class DiscoveryMarket(BaseModel):
     volume_usd: float | None = Field(default=None, ge=0)
     trend_score: float = Field(ge=0, le=100)
     observed_at: datetime
+    closes_at: datetime | None = None
+
+
+class MarketComparison(BaseModel):
+    left_id: str
+    right_id: str
+    decision: Literal["equivalent", "related", "not_equivalent", "insufficient_evidence"]
+    equivalent_contracts: bool
+    reasons: list[str]
+    warning: str
 
 
 _DISCOVERY: list[DiscoveryMarket] = []
@@ -66,6 +77,7 @@ def publish_refresh_batch(batch: RefreshBatch) -> None:
                 volume_usd=item.volume_usd,
                 trend_score=item.trend_score,
                 observed_at=market.observed_at,
+                closes_at=market.closes_at,
             )
         )
     set_discovery_markets(items)
@@ -172,6 +184,35 @@ def markets(
                 if buckets[venue]:
                     balanced.append(buckets[venue].pop(0))
     return balanced[:limit]
+
+
+@app.get("/api/v1/compare", response_model=MarketComparison)
+def compare_markets(
+    left_id: str = Query(min_length=1, max_length=200),
+    right_id: str = Query(min_length=1, max_length=200),
+) -> MarketComparison:
+    by_id = {item.canonical_id: item for item in _DISCOVERY}
+    missing = [identifier for identifier in (left_id, right_id) if identifier not in by_id]
+    if missing:
+        raise HTTPException(status_code=404, detail={"missing_market_ids": missing})
+    left, right = by_id[left_id], by_id[right_id]
+    result = decide_match(
+        MarketContractFacts(left.canonical_id, " ".join(left.title.casefold().split()), left.closes_at),
+        MarketContractFacts(right.canonical_id, " ".join(right.title.casefold().split()), right.closes_at),
+    )
+    equivalent = result.decision.value == "equivalent"
+    return MarketComparison(
+        left_id=left_id,
+        right_id=right_id,
+        decision=result.decision.value,
+        equivalent_contracts=equivalent,
+        reasons=list(result.reasons),
+        warning=(
+            "Equivalent contracts require matching question, deadline, resolution source and rules."
+            if not equivalent
+            else "Contract facts passed the equivalence gate."
+        ),
+    )
 
 
 @app.get("/", response_class=HTMLResponse)
