@@ -146,6 +146,16 @@ class RevenueStore:
                 ),
             )
 
+    def get(self, attribution_id: str) -> AttributionRecord:
+        with self._connection() as connection:
+            row = connection.execute(
+                "SELECT * FROM revenue_attributions WHERE attribution_id=?",
+                (attribution_id,),
+            ).fetchone()
+        if row is None:
+            raise KeyError(attribution_id)
+        return self._record(row)
+
     def attribution_id_for_click(self, click_id: str) -> str:
         with self._connection() as connection:
             row = connection.execute(
