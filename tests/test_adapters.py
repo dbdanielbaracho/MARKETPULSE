@@ -1,3 +1,5 @@
+import asyncio
+
 from app.adapters.kalshi import KalshiAdapter
 from app.adapters.polymarket import PolymarketAdapter
 
@@ -50,3 +52,54 @@ def test_kalshi_normalizes_current_decimal_fields():
     })
     assert market.yes_probability == 0.65
     assert market.volume_usd == 1234.5
+
+
+class _FakeResponse:
+    def __init__(self, payload):
+        self._payload = payload
+
+    def raise_for_status(self):
+        return None
+
+    def json(self):
+        return self._payload
+
+
+class _RecordingClient:
+    def __init__(self, payload):
+        self.payload = payload
+        self.calls = []
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        return None
+
+    async def get(self, url, params):
+        self.calls.append((url, params))
+        return _FakeResponse(self.payload)
+
+
+def test_polymarket_fetch_prioritizes_current_volume(monkeypatch):
+    client = _RecordingClient([])
+    monkeypatch.setattr("app.adapters.polymarket.httpx.AsyncClient", lambda **kwargs: client)
+
+    asyncio.run(PolymarketAdapter("https://gamma-api.polymarket.com").fetch_markets(limit=25))
+
+    _, params = client.calls[0]
+    assert params["order"] == "volume24hr"
+    assert params["ascending"] == "false"
+    assert params["active"] == "true"
+    assert params["closed"] == "false"
+
+
+def test_kalshi_fetch_excludes_multivariate_combos(monkeypatch):
+    client = _RecordingClient({"markets": [], "cursor": None})
+    monkeypatch.setattr("app.adapters.kalshi.httpx.AsyncClient", lambda **kwargs: client)
+
+    asyncio.run(KalshiAdapter("https://external-api.kalshi.com/trade-api/v2").fetch_markets(limit=25))
+
+    _, params = client.calls[0]
+    assert params["mve_filter"] == "exclude"
+    assert params["status"] == "open"
