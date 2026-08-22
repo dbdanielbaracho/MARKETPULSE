@@ -37,10 +37,11 @@ from app.services.social_distribution import all_channel_readiness
 from app.storage.api_keys import ApiKeyStore, ApiPrincipal
 from app.storage.campaigns import CampaignLinkStore
 from app.storage.content_queue import ContentQueueStore, PersistenceProbe
+from app.storage.maintenance import BackupResult, DatabaseMaintenance
 from app.storage.revenue import RevenueStore
 from app.storage.snapshots import SnapshotStore
 
-APP_VERSION = "0.40.0"
+APP_VERSION = "0.41.0"
 
 
 class DiscoveryMarket(BaseModel):
@@ -230,6 +231,8 @@ _AI_DRAFTS_TODAY = 0
 _AI_DAILY_LIMIT_REACHED = False
 _STORAGE_PROBE: PersistenceProbe | None = None
 _PERSISTENT_STORAGE_CONFIGURED = False
+_LAST_BACKUP: BackupResult | None = None
+_LAST_BACKUP_ERROR: str | None = None
 
 
 def _evidence_bundle(market: DiscoveryMarket) -> EvidenceBundle:
@@ -380,6 +383,30 @@ def _database_path() -> str:
     return os.getenv("MP_DATABASE_PATH", "/tmp/marketpulse.db")
 
 
+def _database_backups_enabled() -> bool:
+    value = os.getenv("MP_DATABASE_BACKUPS", "true").strip().casefold()
+    if value in {"1", "true", "yes", "on"}:
+        return True
+    if value in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError("MP_DATABASE_BACKUPS must be boolean")
+
+
+def _backup_directory() -> str:
+    return os.getenv("MP_DATABASE_BACKUP_DIRECTORY", "/data/backups")
+
+
+def _backup_retention() -> int:
+    raw = os.getenv("MP_DATABASE_BACKUP_RETENTION", "7").strip()
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise ValueError("MP_DATABASE_BACKUP_RETENTION must be an integer") from exc
+    if value < 1 or value > 90:
+        raise ValueError("MP_DATABASE_BACKUP_RETENTION must be between 1 and 90")
+    return value
+
+
 def _admin_review_configured() -> bool:
     return len(os.getenv("MP_ADMIN_TOKEN", "").strip()) >= 32
 
@@ -514,6 +541,23 @@ async def run_scheduled_publications_forever(
             pass
 
 
+async def run_database_backups_forever(
+    stop: asyncio.Event,
+    maintenance: DatabaseMaintenance,
+) -> None:
+    global _LAST_BACKUP, _LAST_BACKUP_ERROR
+    while not stop.is_set():
+        try:
+            _LAST_BACKUP = await asyncio.to_thread(maintenance.backup)
+            _LAST_BACKUP_ERROR = None
+        except Exception as exc:
+            _LAST_BACKUP_ERROR = type(exc).__name__
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=86_400)
+        except TimeoutError:
+            pass
+
+
 def _refresh_interval() -> float:
     return _bounded_seconds("MP_REFRESH_INTERVAL_SECONDS", 300, 30, 86_400)
 
@@ -535,7 +579,7 @@ def freshness(now: datetime | None = None) -> tuple[str, float | None]:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    global _CONTENT_QUEUE_COUNTS, _CONTENT_DRAFT_COUNTS, _AI_DRAFTS_ERROR, _AI_PROVIDER_VERIFIED, _AI_DRAFTS_TODAY, _AI_DAILY_LIMIT_REACHED, _STORAGE_PROBE, _PERSISTENT_STORAGE_CONFIGURED
+    global _CONTENT_QUEUE_COUNTS, _CONTENT_DRAFT_COUNTS, _AI_DRAFTS_ERROR, _AI_PROVIDER_VERIFIED, _AI_DRAFTS_TODAY, _AI_DAILY_LIMIT_REACHED, _STORAGE_PROBE, _PERSISTENT_STORAGE_CONFIGURED, _LAST_BACKUP, _LAST_BACKUP_ERROR
     flags = RuntimeFlags.from_env()
     database_path = _database_path()
     store = SnapshotStore(database_path)
@@ -580,6 +624,14 @@ async def lifespan(_: FastAPI):
             name="marketpulse-ingestion",
         )
     ]
+    if _PERSISTENT_STORAGE_CONFIGURED and _database_backups_enabled():
+        tasks.append(asyncio.create_task(
+            run_database_backups_forever(
+                stop,
+                DatabaseMaintenance(database_path, _backup_directory(), _backup_retention()),
+            ),
+            name="marketpulse-database-backups",
+        ))
     if flags.automated_publishing:
         tasks.append(asyncio.create_task(
             run_scheduled_publications_forever(stop, content_queue),
@@ -717,6 +769,14 @@ def status() -> dict[str, object]:
             "first_started_at": _STORAGE_PROBE.first_started_at.isoformat() if _STORAGE_PROBE else None,
             "last_started_at": _STORAGE_PROBE.last_started_at.isoformat() if _STORAGE_PROBE else None,
         },
+        "database_backup": {
+            "enabled": _database_backups_enabled(),
+            "last_created_at": _LAST_BACKUP.created_at.isoformat() if _LAST_BACKUP else None,
+            "last_size_bytes": _LAST_BACKUP.size_bytes if _LAST_BACKUP else None,
+            "last_integrity": _LAST_BACKUP.integrity if _LAST_BACKUP else None,
+            "retained": _LAST_BACKUP.retained if _LAST_BACKUP else 0,
+            "error": _LAST_BACKUP_ERROR,
+        },
         "admin_review_configured": _admin_review_configured(),
         "content_publication_counts": ContentQueueStore(_database_path()).publication_counts(),
         "content_publication_schedule_counts": ContentQueueStore(_database_path()).schedule_counts(),
@@ -732,12 +792,14 @@ def operations_snapshot() -> dict[str, object]:
     storage = snapshot["storage"]
     ai = snapshot["ai_drafts"]
     queue_counts = snapshot["content_queue_counts"]
+    backup = snapshot["database_backup"]
     checks = [
         {"name": "Market freshness", "ok": snapshot["freshness"] == "fresh", "severity": "critical" if snapshot["freshness"] in {"unavailable", "future"} else "warning", "detail": f'Data state is {snapshot["freshness"]}; age={snapshot["data_age_seconds"]}s.'},
         {"name": "Venue ingestion", "ok": venue_counts["kalshi"] > 0 and venue_counts["polymarket"] > 0, "severity": "critical", "detail": f'Kalshi={venue_counts["kalshi"]}; Polymarket={venue_counts["polymarket"]}.'},
         {"name": "Refresh errors", "ok": snapshot["last_refresh_errors"] is None, "severity": "critical", "detail": snapshot["last_refresh_errors"] or "No venue refresh errors."},
         {"name": "Evidence sources", "ok": snapshot["official_evidence_errors"] is None, "severity": "warning", "detail": snapshot["official_evidence_errors"] or f'{snapshot["evidence_source_total_item_count"]} source items available.'},
         {"name": "Persistent storage", "ok": bool(storage["writable"] and storage["persistent_volume_configured"]), "severity": "critical", "detail": "Persistent volume is writable." if storage["writable"] else "Storage is not writable."},
+        {"name": "Database backup", "ok": not backup["enabled"] or (backup["error"] is None and backup["last_integrity"] in {None, "ok"}), "severity": "warning", "detail": backup["error"] or (f'{backup["retained"]} verified backups retained.' if backup["last_created_at"] else "Initial backup pending.")},
         {"name": "AI draft provider", "ok": not ai["enabled"] or bool(ai["configured"] and ai["verified"] and not ai["error"]), "severity": "warning", "detail": ai["error"] or ("Provider verified." if ai["enabled"] else "AI drafts disabled.")},
         {"name": "Failed content jobs", "ok": queue_counts.get("failed", 0) == 0, "severity": "warning", "detail": f'{queue_counts.get("failed", 0)} failed queue items.'},
         {"name": "Distribution safety", "ok": not snapshot["automated_publishing_enabled"] and not snapshot["social_distribution_enabled"], "severity": "critical", "detail": "Automated publishing and social distribution are disabled." if not snapshot["automated_publishing_enabled"] and not snapshot["social_distribution_enabled"] else "A distribution switch is enabled."},
@@ -745,6 +807,37 @@ def operations_snapshot() -> dict[str, object]:
     failing = [item for item in checks if not item["ok"]]
     overall = "critical" if any(item["severity"] == "critical" for item in failing) else ("warning" if failing else "healthy")
     return {"overall": overall, "generated_at": snapshot["generated_at"], "checks": checks, "status": snapshot}
+
+
+@app.get("/api/v1/admin/database/integrity", dependencies=[Depends(_require_admin)])
+def database_integrity() -> dict[str, str]:
+    try:
+        result = DatabaseMaintenance.integrity(_database_path())
+    except (FileNotFoundError, RuntimeError) as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return {"integrity": result}
+
+
+@app.post("/api/v1/admin/database/backups", dependencies=[Depends(_require_admin)])
+def create_database_backup() -> dict[str, object]:
+    global _LAST_BACKUP, _LAST_BACKUP_ERROR
+    try:
+        result = DatabaseMaintenance(
+            _database_path(),
+            _backup_directory(),
+            _backup_retention(),
+        ).backup()
+    except Exception as exc:
+        _LAST_BACKUP_ERROR = type(exc).__name__
+        raise HTTPException(status_code=503, detail="database backup failed") from exc
+    _LAST_BACKUP = result
+    _LAST_BACKUP_ERROR = None
+    return {
+        "created_at": result.created_at,
+        "size_bytes": result.size_bytes,
+        "integrity": result.integrity,
+        "retained": result.retained,
+    }
 
 
 @app.get("/api/v1/admin/revenue", dependencies=[Depends(_require_admin)])
