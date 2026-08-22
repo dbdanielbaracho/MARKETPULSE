@@ -26,7 +26,7 @@ from app.services.matching import MarketContractFacts, decide_match
 from app.storage.content_queue import ContentQueueStore, PersistenceProbe
 from app.storage.snapshots import SnapshotStore
 
-APP_VERSION = "0.11.0"
+APP_VERSION = "0.12.0"
 
 
 class DiscoveryMarket(BaseModel):
@@ -197,14 +197,15 @@ async def run_external_evidence_forever(stop: asyncio.Event, queue: ContentQueue
                 for market in _DISCOVERY:
                     if market.canonical_id not in matched:
                         continue
+                    evidence_bundle = _evidence_bundle(market)
                     candidate = classify_content_candidate(
                         market_id=market.canonical_id,
                         score=market.trend_score,
-                        evidence=_evidence_bundle(market),
+                        evidence=evidence_bundle,
                         policy=policy,
                     )
                     if candidate.decision != ContentDecision.REJECT:
-                        queue.enqueue(candidate)
+                        queue.enqueue(candidate, evidence_bundle)
                 _CONTENT_QUEUE_COUNTS = queue.counts()
             delay = _evidence_refresh_interval()
         else:
