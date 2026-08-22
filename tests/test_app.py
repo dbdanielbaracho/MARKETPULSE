@@ -55,6 +55,24 @@ def test_seo_endpoints_and_canonical_are_consistent():
     assert "<loc>https://marketpulse-production-aa9f.up.railway.app/</loc>" in sitemap.text
 
 
+def test_public_trust_pages_are_available_and_precommercial():
+    expected = {
+        "/methodology": "AI-assisted content",
+        "/risk": "loss of the entire amount",
+        "/privacy": "does not currently offer public user accounts",
+        "/terms": "No custody or execution",
+    }
+    for path, marker in expected.items():
+        response = client.get(path)
+        assert response.status_code == 200
+        assert marker in response.text
+        assert response.headers["x-frame-options"] == "DENY"
+
+    home = client.get("/")
+    for path in expected:
+        assert f'href="{path}"' in home.text
+
+
 def test_public_base_url_must_be_origin_only_https(monkeypatch):
     import pytest
     import app.main as main
