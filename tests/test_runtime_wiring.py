@@ -55,3 +55,26 @@ def test_refresh_interval_is_bounded(monkeypatch):
 
     monkeypatch.setenv("MP_REFRESH_INTERVAL_SECONDS", "300")
     assert main._refresh_interval() == 300
+
+
+def test_freshness_states_are_explicit(monkeypatch):
+    now = datetime(2026, 8, 22, 12, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr(main, "_DISCOVERY", [object()])
+    monkeypatch.setattr(main, "_LAST_REFRESH_AT", now)
+    monkeypatch.setenv("MP_STALE_AFTER_SECONDS", "600")
+
+    assert main.freshness(now)[0] == "fresh"
+    assert main.freshness(datetime(2026, 8, 22, 12, 11, tzinfo=timezone.utc))[0] == "stale"
+    assert main.freshness(datetime(2026, 8, 22, 11, 59, tzinfo=timezone.utc))[0] == "future"
+
+
+def test_freshness_is_unavailable_without_data(monkeypatch):
+    monkeypatch.setattr(main, "_DISCOVERY", [])
+    monkeypatch.setattr(main, "_LAST_REFRESH_AT", None)
+    assert main.freshness()[0] == "unavailable"
+
+
+def test_stale_threshold_is_bounded(monkeypatch):
+    monkeypatch.setenv("MP_STALE_AFTER_SECONDS", "10")
+    with pytest.raises(ValueError):
+        main._stale_after_seconds()
