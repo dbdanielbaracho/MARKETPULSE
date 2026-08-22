@@ -32,3 +32,18 @@ curl --fail --silent --show-error \
 - Search, category, sort, limit, and validated venue filters are covered by automated API tests.
 
 This evidence verifies deployed discovery behavior only. It does not close unrelated content, distribution, revenue, or global-localization requirements.
+
+
+## Safe comparison evidence
+
+Verified at 2026-08-22T03:28Z on application version `0.4.0`.
+
+- The public page renders the heading `Compare contracts safely`.
+- A live comparison between a Kalshi market and a Polymarket market returned:
+  - `decision: related`
+  - `equivalent_contracts: false`
+  - reason: `question text differs`
+  - warning that equivalence requires matching question, deadline, resolution source, and rules.
+- Automated tests also prove that identical titles with different deadlines are `not_equivalent`, while identical titles without sufficient rule evidence return `insufficient_evidence`.
+
+The system therefore fails closed: title similarity alone cannot establish contract equivalence.
