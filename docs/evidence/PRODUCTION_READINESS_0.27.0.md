@@ -78,3 +78,20 @@ Validated at 2026-08-22 19:15 UTC.
 - automated publishing and social distribution remained disabled.
 
 The Railway technical domain remains available for infrastructure purposes but is not the configured public canonical origin.
+
+
+## Accessibility and mobile audit — 0.28.1
+
+Validated at 2026-08-22 19:31 UTC on `https://predibeacon.com/`.
+
+- document language and descriptive title present;
+- one `main` landmark and one `h1`;
+- functional skip link targets `#main`;
+- all five discovery/comparison controls have explicit accessible names;
+- computed minimum height is 44px for those controls;
+- universal `:focus-visible` rule is deployed;
+- no duplicate IDs;
+- no horizontal overflow at the validation viewport;
+- regression tests and full-history secret scan passed in PR #64.
+
+This evidence verifies MP-024 for the current US/English public interface. Future locale or major layout changes must repeat the audit.
