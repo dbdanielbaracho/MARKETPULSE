@@ -4,6 +4,7 @@ import asyncio
 import os
 from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timezone
+from itertools import groupby
 from pathlib import Path
 from typing import Literal
 
@@ -17,7 +18,7 @@ from app.config.runtime import RuntimeFlags
 from app.services.ingestion import IngestionWorker, RefreshBatch
 from app.storage.snapshots import SnapshotStore
 
-APP_VERSION = "0.3.1"
+APP_VERSION = "0.3.2"
 
 
 class DiscoveryMarket(BaseModel):
@@ -157,7 +158,17 @@ def markets(
         key = lambda item: item.volume_usd or 0.0
     else:
         key = lambda item: item.trend_score
-    return sorted(items, key=key, reverse=True)[:limit]
+    ranked = sorted(items, key=key, reverse=True)
+    balanced: list[DiscoveryMarket] = []
+    for _, tied_group in groupby(ranked, key=key):
+        buckets = {"kalshi": [], "polymarket": []}
+        for item in tied_group:
+            buckets[item.venue].append(item)
+        while buckets["kalshi"] or buckets["polymarket"]:
+            for venue in ("kalshi", "polymarket"):
+                if buckets[venue]:
+                    balanced.append(buckets[venue].pop(0))
+    return balanced[:limit]
 
 
 @app.get("/", response_class=HTMLResponse)
