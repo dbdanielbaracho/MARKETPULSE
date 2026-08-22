@@ -138,9 +138,8 @@ def test_evidence_snapshot_is_complete_and_immutable(tmp_path):
     assert {item.kind for item in snapshot} == {EvidenceKind.OFFICIAL, EvidenceKind.NEWS}
     assert all(item.retrieved_at == NOW for item in snapshot)
 
-    changed = bundle.model_copy(deep=True)
-    changed.items[0].title = "Changed after enqueue"
-    assert store.enqueue(candidate(), changed, NOW) is False
+    assert store.enqueue(candidate(), bundle, NOW) is False
+    bundle.items[0].title = "Changed after enqueue"
     assert all(item.title != "Changed after enqueue" for item in store.evidence(identifier))
 
 
