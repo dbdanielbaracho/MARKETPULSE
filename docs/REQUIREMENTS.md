@@ -16,7 +16,7 @@ This registry is the scope-control source of truth. A requirement may not disapp
 | MP-010 | Market equivalence must not be inferred from title similarity alone | VERIFIED | fail-closed matcher, adversarial tests, comparison API and deployed evidence |
 | MP-011 | Market comparison UI with explicit non-equivalence handling | VERIFIED | accessible comparison UI and live `equivalent_contracts=false` evidence |
 | MP-012 | News/evidence context engine | IN_PROGRESS | venue provenance, Federal Reserve/SEC official feeds and allowlisted NPR/BBC news feeds with freshness and conservative matching; live diversity evidence pending |
-| MP-013 | Automated AI content candidates | IN_PROGRESS | evidence-gated candidate classifier with update/create decisions; generation/queue persistence pending |
+| MP-013 | Automated AI content candidates | IN_PROGRESS | evidence-gated classifier plus idempotent SQLite queue, guarded states and audit trail; generation and deploy-durable database pending |
 | MP-014 | Automated website publishing | REQUIRED | content lifecycle + rollback |
 | MP-015 | SEO automation | VERIFIED | canonical, Open Graph, JSON-LD, valid robots.txt and sitemap with tests/live evidence |
 | MP-016 | Instagram distribution | REQUIRED | provider/policy integration |
@@ -33,7 +33,7 @@ This registry is the scope-control source of truth. A requirement may not disapp
 | MP-027 | GitHub PR + CI gates | VERIFIED | repository workflow |
 | MP-028 | Railway staging with deterministic healthcheck | VERIFIED | Docker deployment + /health |
 | MP-029 | Secrets never committed | VERIFIED | pinned Gitleaks CI gate scans full Git history on pushes and PRs |
-| MP-030 | Observability, retries, timeouts, rate-limit handling | IN_PROGRESS | retries/timeouts plus freshness, age, venue counts and errors in status; operational dashboard pending |
+| MP-030 | Observability, retries, timeouts, rate-limit handling | IN_PROGRESS | retries/timeouts plus freshness, source errors, content queue state counts and venue counts in status; operational dashboard pending |
 | MP-031 | Feature flags and kill switches for external venues/publishing | VERIFIED | fail-closed runtime flags + worker enforcement + tests |
 | MP-032 | Partner economics never invented; require evidence/config | IN_PROGRESS | router requires commercial_verified; commission amount absent unless supplied by partner evidence; config validation pending |
 | MP-033 | Global-ready locale/currency/timezone/policy boundaries | IN_PROGRESS | country packs; runtime localization pending |
