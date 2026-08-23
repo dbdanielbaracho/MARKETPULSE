@@ -66,16 +66,18 @@ def _anchors(text: str | None) -> tuple[str, ...]:
 
 
 def _source_key(value: str | None) -> str | None:
-    clean = _clean(value)
-    if not clean:
+    if not value:
         return None
-    match = re.search(r"https?://[^\s]+", str(value or ""), flags=re.I)
+    match = re.search(r"https?://[^\s]+", str(value), flags=re.I)
     if match:
         host = (urlsplit(match.group(0)).hostname or "").casefold()
         if host.startswith("www."):
             host = host[4:]
         if host:
             return host
+    clean = _clean(value)
+    if not clean:
+        return None
     tokens = sorted(_tokens(clean))
     return " ".join(tokens) if tokens else None
 
