@@ -8,6 +8,7 @@ from app.middleware.public_locale import register_public_locale_middleware
 from app.middleware.relevance_pages import register_relevance_pages_middleware
 from app.routes.commercial_intelligence import router as commercial_intelligence_router
 from app.routes.contract_verification import router as contract_verification_router
+from app.routes.localization import router as localization_router
 from app.routes.public_alert_signals import router as public_alert_signals_router
 from app.routes.public_closing_soon import router as public_closing_soon_router
 from app.routes.public_contract_verification import router as public_contract_verification_router
@@ -20,6 +21,7 @@ from app.routes.public_venue_conditions import router as public_venue_conditions
 
 app.include_router(commercial_intelligence_router)
 app.include_router(contract_verification_router)
+app.include_router(localization_router)
 app.include_router(public_alert_signals_router)
 app.include_router(public_closing_soon_router)
 app.include_router(public_contract_verification_router)
@@ -31,5 +33,6 @@ app.include_router(public_venue_conditions_router)
 register_market_intelligence_middleware(app)
 register_alerts_middleware(app)
 register_home_platform_visibility_middleware(app)
-register_public_locale_middleware(app)
 register_relevance_pages_middleware(app)
+# Locale must be registered last so it sees the final rendered public HTML.
+register_public_locale_middleware(app)
