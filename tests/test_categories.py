@@ -14,6 +14,7 @@ from app.services.categories import classify_market_category
         ("Will Bitcoin reach $100,000 in August?", "Economy"),
         ("Will OpenAI release a new AI model?", "Tech"),
         ("Will Elon Musk post 240-259 tweets this week?", "Tech"),
+        ("Will Anthropic valuation hit $3T?", "Tech"),
     ],
 )
 def test_title_fallback_produces_public_filter_categories(title, expected):
@@ -36,3 +37,11 @@ def test_structural_sports_metadata_is_recognized():
 
 def test_unknown_market_is_not_forced_into_a_category():
     assert classify_market_category(title="A completely ambiguous contract") is None
+
+
+def test_strong_title_signal_outranks_noisy_provider_category():
+    assert classify_market_category(
+        title="Will Elon Musk post 240-259 tweets this week?",
+        provider_category="sports",
+        raw={"sportsMarketType": "moneyline"},
+    ) == "Tech"
