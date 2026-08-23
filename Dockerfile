@@ -11,4 +11,4 @@ RUN python -m pip install --upgrade pip && python -m pip install -r requirements
 
 COPY . .
 
-CMD ["/bin/sh", "-c", "exec python -m uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+CMD ["/bin/sh", "-c", "exec python -m uvicorn app.entrypoint:app --host 0.0.0.0 --port ${PORT:-8000}"]

@@ -38,6 +38,16 @@ class PolymarketAdapter:
         items = payload if isinstance(payload, list) else payload.get("data", [])
         return [self.normalize(item) for item in items]
 
+    async def fetch_market(self, market_id: str) -> dict[str, Any]:
+        """Fetch a single Gamma market so CLOB/trade identifiers can be resolved."""
+        if not market_id or len(market_id) > 300:
+            raise ValueError("invalid Polymarket market id")
+        async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+            response = await client.get(f"{self.base_url}/markets/{market_id}")
+            response.raise_for_status()
+        payload = response.json()
+        return payload if isinstance(payload, dict) else {}
+
     async def fetch_orderbook(self, token_id: str) -> dict[str, Any]:
         """Fetch the public CLOB order book for one outcome token."""
         if not token_id or len(token_id) > 300:
