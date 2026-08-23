@@ -11,8 +11,18 @@ client = TestClient(app)
 
 def test_market_timeline_script_is_well_formed():
     template = (ROOT / "app" / "templates" / "market.html").read_text(encoding="utf-8")
-    assert "· </script></body></html>+" not in template
-    assert "Math.round(e.volume_usd).toLocaleString('en-US')" in template
+    script_open = '<script nonce="__CSP_NONCE__">'
+
+    assert template.count(script_open) == 1
+    assert template.count("</script>") == 1
+    assert template.endswith("</script></body></html>")
+    script = template.split(script_open, 1)[1].rsplit("</script>", 1)[0]
+    document_tail = template.rsplit("</script>", 1)[1]
+    assert "async function loadTimeline()" in script
+    assert "Math.round(event.volume_usd).toLocaleString('en-US')" in script
+    assert "target.replaceChildren" in script
+    assert "</body></html>" not in script
+    assert document_tail == "</body></html>"
 
 
 def test_service_worker_never_caches_sensitive_routes():
