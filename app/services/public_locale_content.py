@@ -3,7 +3,9 @@ from __future__ import annotations
 
 def _apply(html: str, replacements: dict[str, str]) -> str:
     result = html
-    for source, target in replacements.items():
+    # Apply the most specific phrases first so shorter labels cannot corrupt
+    # longer dynamic states (for example plural creator counts or error text).
+    for source, target in sorted(replacements.items(), key=lambda item: len(item[0]), reverse=True):
         result = result.replace(source, target)
     return result
 
