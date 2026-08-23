@@ -1,0 +1,1 @@
+ADOPT hosted Checkout and Customer Portal; ADAPT provider events into explicit PrediBeacon entitlements; REJECT custom card handling, public unauthenticated billing routes, and invented pricing.
