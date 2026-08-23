@@ -38,6 +38,8 @@ SCRIPT = r'''<script id="predibeacon-venue-context-script">
    }catch{grid.innerHTML=`<div class="venue-context-stat"><span>${t.status}</span><strong>${t.temporarily}</strong><em>${t.marketsRemain}</em></div>`}
  }
  document.querySelectorAll('[data-venue-link]').forEach(el=>el.addEventListener('click',()=>loadVenue(el.dataset.venueLink)));
+ const initial=new URLSearchParams(location.search).get('venue');
+ if(initial==='kalshi'||initial==='polymarket')loadVenue(initial);
 })();
 </script>'''
 
