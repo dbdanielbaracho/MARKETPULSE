@@ -106,7 +106,7 @@ def test_home_exposes_explicit_accessible_names_and_touch_targets():
         "Sort markets",
         "Filter by platform",
         "First market to compare",
-        "Second market to compare",
+        "Equivalent market on the other platform",
     ):
         assert f'aria-label="{label}"' in response.text
     assert "min-height:44px" in response.text
