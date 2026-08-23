@@ -160,6 +160,45 @@ Every production incident must add a regression test before or with the fix. In 
 - localization MutationObserver recursively rewrites DOM and freezes Chrome;
 - loading state remains visible after an API error.
 
+## Research-backed quality decisions
+
+Before a material UX, mobile, accessibility, security, performance, SEO, PWA or testing decision is accepted, the implementation must be compared with current primary-source guidance and the project must record whether the practice is adopted, adapted or rejected with rationale. Research must prefer current standards and first-party documentation over blog opinion.
+
+Current baseline decisions:
+
+- Responsive design on one URL is the default. Separate mobile URLs and user-agent-specific HTML are rejected unless a future hard requirement proves they are necessary. This follows Google mobile-first indexing guidance and reduces duplicate implementation paths.
+- Browser E2E tests must assert user-visible behavior with isolated state and role/label-based locators where practical. This follows Playwright guidance and avoids brittle implementation-detail tests.
+- WCAG 2.2 AA is the minimum accessibility target. Touch controls should normally target at least 44x44 CSS px even though WCAG 2.2 AA allows smaller targets with spacing exceptions; focus must remain visible and unobscured.
+- Core Web Vitals field targets are LCP <= 2.5 s, INP <= 200 ms and CLS <= 0.1 at the 75th percentile, segmented by mobile and desktop. Synthetic CI thresholds are supporting regression gates, not substitutes for field data.
+- Security verification uses OWASP ASVS 5.0 as the reference checklist for web application controls, supplemented by project-specific threat tests for outbound attribution, admin APIs, partner reconciliation and data leakage.
+
+## Final-project acceptance execution
+
+The project is not considered finished merely because the latest PR is green. At the end of implementation, a dedicated final acceptance run must be executed without waiting for owner prompts.
+
+The final run must include:
+
+1. full `pytest` suite and all deterministic combinatorial tests;
+2. browser E2E critical journeys with fresh isolated contexts;
+3. mobile/tablet/desktop responsive matrix, including small-phone widths and landscape where layout risk exists;
+4. keyboard-only navigation and accessibility checks against the WCAG 2.2 AA target;
+5. production-domain crawl of every discoverable public route and every actionable control reachable from those routes;
+6. Kalshi-only, Polymarket-only and combined-view journeys, including market absent on the other venue;
+7. outbound routing in organic and commercially configured test modes, proving no commission percentage, partner economics or private identifiers leak publicly;
+8. locale/browser-language/manual-override combinations for every supported language catalog, with English fallback checks;
+9. healthy, empty, partial, stale, slow, timeout, malformed and upstream-failure data states;
+10. watchlist, alerts, sharing/campaign attribution, market detail, comparison, related markets, Top 10 and installable PWA flows;
+11. SEO checks: canonical, robots, sitemap, structured data, Open Graph and mobile content parity;
+12. security checks mapped to applicable OWASP ASVS controls plus secret scan, auth boundaries, HMAC replay protection, input validation, XSS/HTML injection, open redirect, path/query abuse and sensitive-response cache policy;
+13. performance regression tests plus production field-metric review when sufficient traffic exists;
+14. service-worker/offline tests proving no admin/API/outbound/editorial sensitive responses are cached;
+15. deployment verification on `predibeacon.com`, `www` behavior and Railway origin equivalence;
+16. partner/revenue tests proving only verified partner data enters revenue accounting and user-facing pages never expose internal commission rates;
+17. regression replay for every incident recorded during development;
+18. final requirements audit: every registry item must end as VERIFIED, BLOCKED with an external dependency and evidence, REPLACED_WITH_EVIDENCE, or REMOVED_WITH_RATIONALE. No unexplained `IN_PROGRESS` or `REQUIRED` item is allowed at project close.
+
+Failures in this final run are treated as project defects, not manual-owner acceptance tasks. A defect must be fixed, receive a regression test, and the affected final-run segment must be repeated before closure.
+
 ## Manual testing policy
 
-Manual owner testing is a final visual acceptance check, not the primary QA mechanism. Routine functional verification belongs in CI.
+Manual owner testing is a final visual/product acceptance check, not the primary QA mechanism. Routine functional verification belongs in CI. The owner is not expected to execute the final test matrix manually.

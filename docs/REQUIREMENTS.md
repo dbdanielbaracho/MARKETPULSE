@@ -66,6 +66,7 @@ This registry is the scope-control source of truth. A requirement may not disapp
 | MP-060 | Critical release journeys have deterministic end-to-end regression coverage | VERIFIED | discovery → campaign → internal detail → outbound attribution → creator accounting and API key creation/rotation are tested without external network access |
 | MP-061 | SQLite write concurrency cannot silently lose commercial API quota increments | VERIFIED | 60 concurrent independent authorizations produce exactly usage counts 1–60 under WAL and atomic `BEGIN IMMEDIATE` accounting |
 | MP-062 | CI detects material in-process API performance regressions without loading production | VERIFIED | 240-request direct-ASGI smoke gate enforces a 250 ms p95 regression budget and explicitly excludes network/SLA claims |
+| MP-063 | Final project closure requires research-backed best-practice review and execution of the complete master acceptance plan without owner prompting | REQUIRED | `docs/TEST_PLAN_MASTER.md` defines source-of-truth decisions and final execution; may be VERIFIED only after all project requirements are terminal and the full final acceptance run passes or external blocks are evidenced |
 
 ## Change-control rule
 
