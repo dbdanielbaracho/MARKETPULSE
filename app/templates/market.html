@@ -55,6 +55,55 @@ async function loadHistory(hours=168){try{const r=await fetch('/api/v1/market/hi
 async function loadIntelligence(){if(!id)return;loadHistory();try{const r=await fetch('/api/v1/market/signal?'+new URLSearchParams({market_id:id})),d=await r.json();document.querySelector('#signals').innerHTML=d.reasons.map(x=>'<li>'+x.replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]))+'</li>').join('')}catch{document.querySelector('#signals').innerHTML='<li class="empty">Signal is temporarily unavailable.</li>'}try{const r=await fetch('/api/v1/market/related?'+new URLSearchParams({market_id:id})),data=await r.json();document.querySelector('#related').innerHTML=data.length?data.map(item=>{const m=item.market;const label=item.relationship==='related'?'Related topic':'Possible connection';return '<a href="'+(m.slug?'/markets/'+encodeURIComponent(m.slug):'/market?'+new URLSearchParams({market_id:m.canonical_id}))+'"><strong>'+m.title.replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]))+'</strong><br><span class="muted">'+label+' · Not verified as an equivalent contract · '+m.venue+' · Trend '+Math.round(m.trend_score)+'</span></a>'}).join(''):'<p class="empty">No closely related market is available.</p>'}catch{document.querySelector('#related').innerHTML='<p class="empty">Related markets are temporarily unavailable.</p>'}}
 document.querySelectorAll('.period').forEach(b=>b.addEventListener('click',()=>loadHistory(Number(b.dataset.hours))));
 loadIntelligence();
-async function loadTimeline(){if(!id)return;const target=document.querySelector('#timeline'),safe=s=>String(s??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));try{const r=await fetch('/api/v1/market/timeline?'+new URLSearchParams({market_id:id,hours:'168'}));if(!r.ok)throw new Error();const events=await r.json();target.innerHTML=events.length?events.map(e=>{const detail=e.kind==='probability'&&e.probability!=null?Math.round(e.probability*100)+'%'+(e.volume_usd==null?'':' · :e.kind;const title=e.source_url?'<a href="'+safe(e.source_url)+'" target="_blank" rel="noopener noreferrer">'+safe(e.title)+'</a>':safe(e.title);return '<div><strong>'+title+'</strong><br><span class="muted">'+new Date(e.occurred_at).toLocaleString()+' · '+detail+'</span></div>'}).join(''):'<p class="empty">No timeline events are available yet.</p>'}catch{target.innerHTML='<p class="empty">Timeline is temporarily unavailable.</p>'}}loadTimeline();
-</script></body></html>+Math.round(e.volume_usd).toLocaleString('en-US')):e.kind;const title=e.source_url?'<a href="'+safe(e.source_url)+'" target="_blank" rel="noopener noreferrer">'+safe(e.title)+'</a>':safe(e.title);return '<div><strong>'+title+'</strong><br><span class="muted">'+new Date(e.occurred_at).toLocaleString()+' · '+detail+'</span></div>'}).join(''):'<p class="empty">No timeline events are available yet.</p>'}catch{target.innerHTML='<p class="empty">Timeline is temporarily unavailable.</p>'}}loadTimeline();
+function timelineDetail(event){
+  if(event.kind!=='probability'||event.probability==null)return event.kind;
+  const probability=Math.round(event.probability*100)+'%';
+  const volume=event.volume_usd==null?'':' · $'+Math.round(event.volume_usd).toLocaleString('en-US');
+  return probability+volume;
+}
+function timelineItem(event){
+  const item=document.createElement('div');
+  const title=document.createElement('strong');
+  if(event.source_url){
+    try{
+      const url=new URL(event.source_url);
+      if(url.protocol!=='https:')throw new Error();
+      const link=document.createElement('a');
+      link.href=url.href;
+      link.target='_blank';
+      link.rel='noopener noreferrer';
+      link.textContent=String(event.title??'');
+      title.append(link);
+    }catch{title.textContent=String(event.title??'')}
+  }else{title.textContent=String(event.title??'')}
+  const detail=document.createElement('span');
+  detail.className='muted';
+  detail.textContent=new Date(event.occurred_at).toLocaleString()+' · '+timelineDetail(event);
+  item.append(title,document.createElement('br'),detail);
+  return item;
+}
+async function loadTimeline(){
+  if(!id)return;
+  const target=document.querySelector('#timeline');
+  try{
+    const r=await fetch('/api/v1/market/timeline?'+new URLSearchParams({market_id:id,hours:'168'}));
+    if(!r.ok)throw new Error();
+    const events=await r.json();
+    target.replaceChildren();
+    if(events.length){
+      events.forEach(event=>target.append(timelineItem(event)));
+    }else{
+      const empty=document.createElement('p');
+      empty.className='empty';
+      empty.textContent='No timeline events are available yet.';
+      target.append(empty);
+    }
+  }catch{
+    const unavailable=document.createElement('p');
+    unavailable.className='empty';
+    unavailable.textContent='Timeline is temporarily unavailable.';
+    target.replaceChildren(unavailable);
+  }
+}
+loadTimeline();
 </script></body></html>
