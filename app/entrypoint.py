@@ -9,6 +9,7 @@ from app.routes.public_alert_signals import router as public_alert_signals_route
 from app.routes.public_contract_verification import router as public_contract_verification_router
 from app.routes.public_execution_quality import router as public_execution_quality_router
 from app.routes.public_market_comparison import router as public_market_comparison_router
+from app.routes.public_relevance import router as public_relevance_router
 from app.routes.public_trade_activity import router as public_trade_activity_router
 from app.routes.public_venue_conditions import router as public_venue_conditions_router
 
@@ -19,6 +20,7 @@ app.include_router(public_alert_signals_router)
 app.include_router(public_contract_verification_router)
 app.include_router(public_execution_quality_router)
 app.include_router(public_market_comparison_router)
+app.include_router(public_relevance_router)
 app.include_router(public_trade_activity_router)
 app.include_router(public_venue_conditions_router)
 register_market_intelligence_middleware(app)
