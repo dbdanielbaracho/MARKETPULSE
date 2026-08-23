@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from app.main import app
+from app.middleware.alerts import register_alerts_middleware
 from app.middleware.market_intelligence import register_market_intelligence_middleware
 from app.routes.commercial_intelligence import router as commercial_intelligence_router
 from app.routes.contract_verification import router as contract_verification_router
@@ -19,3 +20,4 @@ app.include_router(public_execution_quality_router)
 app.include_router(public_market_comparison_router)
 app.include_router(public_trade_activity_router)
 register_market_intelligence_middleware(app)
+register_alerts_middleware(app)
