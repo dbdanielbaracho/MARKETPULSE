@@ -41,7 +41,7 @@ from app.storage.maintenance import BackupResult, DatabaseMaintenance
 from app.storage.revenue import RevenueStore
 from app.storage.snapshots import SnapshotStore
 
-APP_VERSION = "0.50.2"
+APP_VERSION = "0.51.0"
 
 
 class DiscoveryMarket(BaseModel):
@@ -324,6 +324,7 @@ def _public_base_url() -> str:
         raise ValueError("MP_PUBLIC_BASE_URL must be an origin-only HTTPS URL")
     return value
 
+
 def _official_evidence_enabled() -> bool:
     value = os.getenv("MP_OFFICIAL_EVIDENCE", "true").strip().casefold()
     if value in {"1", "true", "yes", "on"}:
@@ -376,7 +377,6 @@ def _ai_daily_limit() -> int:
     if value < 1 or value > 1000:
         raise ValueError("MP_AI_DAILY_LIMIT must be between 1 and 1000")
     return value
-
 
 
 def _database_path() -> str:
@@ -1157,19 +1157,29 @@ def published_articles(limit: int = Query(default=20, ge=1, le=100)) -> list[Pub
 @app.get("/articles", response_class=HTMLResponse)
 def article_index() -> HTMLResponse:
     items = ContentQueueStore(_database_path()).publications("active", 100)
-    cards = "".join(
-        f'<article><h2><a href="/articles/{html.escape(item.slug, quote=True)}">'
-        f'{html.escape(item.headline)}</a></h2>'
-        f'<p>Published {html.escape(item.published_at.isoformat())} · version {item.version}</p></article>'
-        for item in items
-    ) or "<p>No editorial briefs have been published yet.</p>"
+    if items:
+        content = '<section class="list" aria-label="Published editorial briefs">' + "".join(
+            f'<a class="brief" href="/articles/{html.escape(item.slug, quote=True)}">'
+            f'<div class="eyebrow">PUBLISHED BRIEF</div><h2>{html.escape(item.headline)}</h2>'
+            f'<p>Published {html.escape(item.published_at.strftime("%b %d, %Y · %H:%M UTC"))} · Version {item.version}</p></a>'
+            for item in items
+        ) + "</section>"
+    else:
+        content = (
+            '<section class="empty"><div class="eyebrow">NO BRIEFS PUBLISHED YET</div>'
+            '<h2>The editorial pipeline is ready; nothing has passed publication review yet.</h2>'
+            '<p>This is not a data error. PrediBeacon only publishes a brief after the content pipeline creates a candidate, evidence is retained, and the publication step is approved. Market intelligence remains available while the editorial library is empty.</p>'
+            '<a class="cta" href="/">Explore live markets</a></section>'
+        )
+    template = Path(__file__).parent / "templates" / "articles.html"
+    body = template.read_text(encoding="utf-8").replace("__ARTICLE_CONTENT__", content)
     return HTMLResponse(
-        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
-        "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
-        "<title>PrediBeacon — Editorial briefs</title></head><body>"
-        "<main><p><a href=\"/\">PrediBeacon</a></p><h1>Editorial briefs</h1>"
-        f"{cards}</main></body></html>",
-        headers={"Cache-Control": "public, max-age=60"},
+        body,
+        headers={
+            "Cache-Control": "public, max-age=60",
+            "X-Content-Type-Options": "nosniff",
+            "Referrer-Policy": "strict-origin-when-cross-origin",
+        },
     )
 
 
@@ -1187,19 +1197,25 @@ def article_page(slug: str) -> HTMLResponse:
         f'{html.escape(evidence[identifier].title)}</a></li>'
         for identifier in item.citation_ids
         if identifier in evidence
+    ) or "<li>No attributable source is currently displayed for this publication.</li>"
+    article_body = "<br>".join(html.escape(item.body).splitlines())
+    template = Path(__file__).parent / "templates" / "article.html"
+    body = template.read_text(encoding="utf-8")
+    body = body.replace("__ARTICLE_TITLE__", html.escape(item.headline))
+    body = body.replace("__ARTICLE_HEADING__", html.escape(item.headline))
+    body = body.replace(
+        "__ARTICLE_META__",
+        f'Published {html.escape(item.published_at.strftime("%b %d, %Y · %H:%M UTC"))} · Version {item.version}',
     )
-    body = "<br>".join(html.escape(item.body).splitlines())
+    body = body.replace("__ARTICLE_BODY__", article_body)
+    body = body.replace("__ARTICLE_SOURCES__", citations)
     return HTMLResponse(
-        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
-        "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
-        f"<title>{html.escape(item.headline)} — PrediBeacon</title></head><body>"
-        "<main><p><a href=\"/articles\">Editorial briefs</a></p>"
-        f"<article><h1>{html.escape(item.headline)}</h1>"
-        f"<p>Version {item.version} · Published {html.escape(item.published_at.isoformat())}</p>"
-        f"<div>{body}</div><h2>Sources</h2><ol>{citations}</ol>"
-        "<p>Prediction-market prices can change and are not financial advice.</p>"
-        "</article></main></body></html>",
-        headers={"Cache-Control": "public, max-age=60"},
+        body,
+        headers={
+            "Cache-Control": "public, max-age=60",
+            "X-Content-Type-Options": "nosniff",
+            "Referrer-Policy": "strict-origin-when-cross-origin",
+        },
     )
 
 
@@ -1227,7 +1243,6 @@ def markets(
         key = lambda item: item.trend_score
     ranked = sorted(items, key=key, reverse=True)
 
-    # Suppress exact duplicate contracts before presentation.
     deduplicated: list[DiscoveryMarket] = []
     seen: set[tuple[str, str]] = set()
     for item in ranked:
@@ -1237,9 +1252,6 @@ def markets(
         seen.add(identity)
         deduplicated.append(item)
 
-    # Relevance remains primary. After three consecutive cards from one
-    # provider, diversify only when the other provider's next score is at
-    # no more than 10 score points behind the highest remaining result.
     if venue is None:
         remaining = list(deduplicated)
         balanced: list[DiscoveryMarket] = []
@@ -1806,11 +1818,6 @@ def outbound_redirect(
     creator_id: str | None = Query(default=None, max_length=100),
     channel: str | None = Query(default=None, max_length=50),
 ) -> RedirectResponse:
-    """Record an owned first-party click before sending the visitor to a venue.
-
-    Commission remains unknown until a partner reports and reconciles it.
-    Destination URLs come only from the ingested server-side market record.
-    """
     market = _market_by_id(market_id)
     if market.venue != venue or not market.source_url:
         raise HTTPException(status_code=404, detail="outbound route unavailable")
