@@ -9,7 +9,7 @@ def _base_home() -> str:
         <label><select id="sort"><option value="trending">Most relevant</option><option value="movers">Biggest movers</option><option value="volume">Most volume</option></select></label>
         <label><select id="venue"><option value="">All</option><option value="kalshi">Kalshi</option><option value="polymarket">Polymarket</option></select></label>
       </div>
-      <div id="grid"></div>
+      <p id="count"></p><div id="state"></div><div id="grid"></div>
     </section>
     </body></html>'''
 
@@ -32,17 +32,29 @@ def test_home_v2_uses_real_status_and_market_endpoints():
     assert "fetch('/api/v1/markets?sort=movers&limit=1')" in enhanced
     assert "fetch('/api/v1/markets?sort=volume&limit=1')" in enhanced
     assert "fetch('/api/v1/compare/pairs?limit=12&candidate_limit=24')" in enhanced
+    assert "fetch('/api/v1/markets/closing-soon?'" in enhanced
     assert 'venue_market_counts?.kalshi' in enhanced
     assert 'venue_market_counts?.polymarket' in enhanced
 
 
-def test_home_v2_quick_filters_drive_existing_sort_control():
+def test_home_v2_quick_filters_are_functional():
     enhanced = enhance_home_v2(_base_home())
 
-    for value in ('trending', 'movers', 'volume'):
+    for value in ('trending', 'movers', 'volume', 'closing'):
         assert f'data-q="{value}"' in enhanced
-    assert 'sort.value=b.dataset.q' in enhanced
+    assert 'Terminando em breve' in enhanced
+    assert 'sort.value=activeMode' in enhanced
     assert "sort.dispatchEvent(new Event('change'" in enhanced
+    assert "if(activeMode==='closing')loadClosing()" in enhanced
+    assert "if(venue?.value)q.set('venue',venue.value)" in enhanced
+
+
+def test_home_v2_closing_mode_has_honest_empty_and_error_states():
+    enhanced = enhance_home_v2(_base_home())
+
+    assert 'Nenhum mercado com prazo conhecido está fechando em breve.' in enhanced
+    assert 'O ranking por prazo está temporariamente indisponível.' in enhanced
+    assert "if(!r.ok)throw 0" in enhanced
 
 
 def test_home_v2_explains_product_value_without_fake_market_examples():
