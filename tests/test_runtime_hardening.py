@@ -23,6 +23,12 @@ def test_market_timeline_script_is_well_formed():
     assert "target.replaceChildren" in script
     assert "</body></html>" not in script
     assert document_tail == "</body></html>"
+    assert '.period[aria-pressed="true"]' in template
+    assert 'aria-live="polite"' in template
+    assert "function drawHistory(points,hours)" in script
+    assert "startT=endT-hours*60*60*1000" in script
+    assert "setAttribute('aria-pressed'" in script
+    assert "loadHistory(24)" in script
 
 
 def test_service_worker_never_caches_sensitive_routes():

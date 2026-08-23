@@ -10,7 +10,7 @@ main{padding:3rem 0}.eyebrow{color:var(--accent);font-weight:800;text-transform:
 h1{font-size:clamp(2rem,6vw,3.7rem);line-height:1.06}.prob{font-size:clamp(3rem,10vw,5rem);font-weight:900;margin:.5rem 0}.muted{color:var(--muted);line-height:1.6}
 .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem}.stat{border:1px solid var(--line);border-radius:12px;padding:1rem}.stat strong{display:block;font-size:1.25rem;margin-top:.35rem}
 .actions{display:flex;gap:.75rem;flex-wrap:wrap;margin-top:1.5rem}.button{border-radius:12px;padding:.9rem 1.1rem;text-decoration:none;font-weight:800;min-height:48px;display:inline-flex;align-items:center}
-.primary{background:var(--accent);color:var(--bg)}.secondary{border:1px solid var(--line)}.notice{font-size:.88rem;color:var(--muted)}.chart{width:100%;height:220px;background:var(--bg);border-radius:12px}.signal-list,.related-list{display:grid;gap:.75rem;padding:0;list-style:none}.related-list a{display:block;border:1px solid var(--line);border-radius:12px;padding:1rem;text-decoration:none}.empty{color:var(--muted)}
+.primary{background:var(--accent);color:var(--bg)}.secondary{border:1px solid var(--line)}.period{cursor:pointer}.period[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--bg)}.period:focus-visible{outline:3px solid #fff;outline-offset:3px}.notice{font-size:.88rem;color:var(--muted)}.chart{width:100%;height:220px;background:var(--bg);border-radius:12px}.signal-list,.related-list{display:grid;gap:.75rem;padding:0;list-style:none}.related-list a{display:block;border:1px solid var(--line);border-radius:12px;padding:1rem;text-decoration:none}.empty{color:var(--muted)}
 @media(max-width:650px){.stats{grid-template-columns:1fr}.actions{display:grid}.button{justify-content:center}}
 </style></head><body>
 <header><div class="wrap"><a class="brand" href="/">PREDIBEACON</a></div></header>
@@ -28,7 +28,7 @@ h1{font-size:clamp(2rem,6vw,3.7rem);line-height:1.06}.prob{font-size:clamp(3rem,
 <button class="button secondary" id="share" type="button">Share market</button><a class="button secondary" id="alert-link">Create alert</a><button class="button secondary" id="embed" type="button">Copy embed code</button></div>
 <p class="notice">The external platform opens in a new tab. PrediBeacon records the referral but does not execute trades or hold customer funds.</p></section>
 <section class="panel"><h2>Why this market matters</h2><p class="muted">PrediBeacon surfaces this market based on movement, activity and recency. Probability is market data, not a guaranteed outcome.</p></section>
-<section class="panel"><h2>Probability history</h2><div class="actions" aria-label="History period"><button class="button secondary period" data-hours="24" type="button">24H</button><button class="button secondary period" data-hours="168" type="button">7D</button><button class="button secondary period" data-hours="720" type="button">30D</button></div><svg id="chart" class="chart" viewBox="0 0 800 220" role="img" aria-label="Probability history chart"></svg><p class="notice" id="history-note"></p></section>
+<section class="panel"><h2>Probability history</h2><div class="actions" aria-label="History period"><button class="button secondary period" data-hours="24" type="button" aria-pressed="true">24H</button><button class="button secondary period" data-hours="168" type="button" aria-pressed="false">7D</button><button class="button secondary period" data-hours="720" type="button" aria-pressed="false">30D</button></div><svg id="chart" class="chart" viewBox="0 0 800 220" role="img" aria-label="Probability history chart for the last 24 hours"></svg><p class="notice" id="history-note" aria-live="polite">Loading 24-hour history…</p></section>
 <section class="panel"><h2>Why this market is moving</h2><ul id="signals" class="signal-list"><li class="empty">Loading signal…</li></ul><p class="notice">These are observed market signals. Coincidence with an event does not establish causation.</p></section>
 <section class="panel"><h2>Market timeline</h2><div id="timeline" class="related-list"><p class="empty">Loading timeline…</p></div></section><section class="panel"><h2>Related markets</h2><div id="related" class="related-list"><p class="empty">Loading related markets…</p></div></section>
 </article></main>
@@ -50,9 +50,79 @@ document.querySelector('#watch').addEventListener('click',()=>{let list=watchlis
 document.querySelector('#share').addEventListener('click',async()=>{const data={title:document.title,url:location.href};if(navigator.share){await navigator.share(data)}else{await navigator.clipboard.writeText(location.href);document.querySelector('#share').textContent='Link copied'}});document.querySelector('#embed').addEventListener('click',async()=>{const src=location.origin+'/embed/market?'+new URLSearchParams({market_id:id});const code='<iframe src="'+src+'" width="420" height="240" loading="lazy" title="PrediBeacon market"></iframe>';await navigator.clipboard.writeText(code);document.querySelector('#embed').textContent='Embed code copied'});
 load();
 
-function drawHistory(points){const svg=document.querySelector('#chart'),note=document.querySelector('#history-note');svg.replaceChildren();const usable=points.filter(x=>x.probability!=null);if(usable.length<2){note.textContent='More observations are needed before a history line can be drawn.';return}const ns='http://www.w3.org/2000/svg',pad=28,w=800,h=220;const minT=new Date(usable[0].observed_at).getTime(),maxT=new Date(usable[usable.length-1].observed_at).getTime();const span=Math.max(1,maxT-minT);const coords=usable.map(x=>[pad+(new Date(x.observed_at).getTime()-minT)/span*(w-pad*2),h-pad-x.probability*(h-pad*2)]);const path=document.createElementNS(ns,'path');path.setAttribute('d',coords.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' '));path.setAttribute('fill','none');path.setAttribute('stroke','#8be9c7');path.setAttribute('stroke-width','4');path.setAttribute('vector-effect','non-scaling-stroke');svg.append(path);note.textContent=usable.length+' recorded observations · '+Math.round(usable[0].probability*100)+'% to '+Math.round(usable[usable.length-1].probability*100)+'%'}
-async function loadHistory(hours=168){try{const r=await fetch('/api/v1/market/history?'+new URLSearchParams({market_id:id,hours:String(hours)}));if(!r.ok)throw new Error();drawHistory(await r.json())}catch{document.querySelector('#history-note').textContent='History is temporarily unavailable.'}}
-async function loadIntelligence(){if(!id)return;loadHistory();try{const r=await fetch('/api/v1/market/signal?'+new URLSearchParams({market_id:id})),d=await r.json();document.querySelector('#signals').innerHTML=d.reasons.map(x=>'<li>'+x.replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]))+'</li>').join('')}catch{document.querySelector('#signals').innerHTML='<li class="empty">Signal is temporarily unavailable.</li>'}try{const r=await fetch('/api/v1/market/related?'+new URLSearchParams({market_id:id})),data=await r.json();document.querySelector('#related').innerHTML=data.length?data.map(item=>{const m=item.market;const label=item.relationship==='related'?'Related topic':'Possible connection';return '<a href="'+(m.slug?'/markets/'+encodeURIComponent(m.slug):'/market?'+new URLSearchParams({market_id:m.canonical_id}))+'"><strong>'+m.title.replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]))+'</strong><br><span class="muted">'+label+' · Not verified as an equivalent contract · '+m.venue+' · Trend '+Math.round(m.trend_score)+'</span></a>'}).join(''):'<p class="empty">No closely related market is available.</p>'}catch{document.querySelector('#related').innerHTML='<p class="empty">Related markets are temporarily unavailable.</p>'}}
+const HISTORY_LABELS={24:'24H',168:'7D',720:'30D'};
+let historyRequest=0;
+function setHistoryPeriod(hours){
+  document.querySelectorAll('.period').forEach(button=>{
+    button.setAttribute('aria-pressed',String(Number(button.dataset.hours)===hours));
+  });
+}
+function historyCoverageLabel(milliseconds){
+  const hours=Math.max(0,milliseconds/3600000);
+  if(hours<1)return Math.max(1,Math.round(hours*60))+' minutes';
+  if(hours<48)return hours.toFixed(hours<10?1:0)+' hours';
+  const days=hours/24;
+  return days.toFixed(days<10?1:0)+' days';
+}
+function appendHistoryAxisLabel(svg,x,text,anchor){
+  const label=document.createElementNS('http://www.w3.org/2000/svg','text');
+  label.setAttribute('x',String(x));
+  label.setAttribute('y','210');
+  label.setAttribute('fill','#aab4c3');
+  label.setAttribute('font-size','13');
+  label.setAttribute('text-anchor',anchor);
+  label.textContent=text;
+  svg.append(label);
+}
+function drawHistory(points,hours){
+  const svg=document.querySelector('#chart'),note=document.querySelector('#history-note');
+  svg.replaceChildren();
+  const usable=points.filter(point=>point.probability!=null);
+  const requestedLabel=HISTORY_LABELS[hours]||hours+'H';
+  svg.setAttribute('aria-label','Probability history chart for '+requestedLabel);
+  if(usable.length<2){
+    note.textContent='More observations are needed. '+requestedLabel+' is selected.';
+    return;
+  }
+  const pad=28,w=800,h=220,endT=Date.now(),startT=endT-hours*60*60*1000,span=Math.max(1,endT-startT);
+  const coords=usable.map(point=>{
+    const observed=new Date(point.observed_at).getTime();
+    const ratio=Math.min(1,Math.max(0,(observed-startT)/span));
+    return [pad+ratio*(w-pad*2),h-pad-point.probability*(h-pad*2)];
+  });
+  const path=document.createElementNS('http://www.w3.org/2000/svg','path');
+  path.setAttribute('d',coords.map((point,index)=>(index?'L':'M')+point[0].toFixed(1)+' '+point[1].toFixed(1)).join(' '));
+  path.setAttribute('fill','none');
+  path.setAttribute('stroke','#8be9c7');
+  path.setAttribute('stroke-width','4');
+  path.setAttribute('vector-effect','non-scaling-stroke');
+  svg.append(path);
+  appendHistoryAxisLabel(svg,pad,new Date(startT).toLocaleDateString(),'start');
+  appendHistoryAxisLabel(svg,w-pad,'Now','end');
+  const firstObserved=new Date(usable[0].observed_at).getTime();
+  const available=Math.max(0,endT-firstObserved);
+  const probabilities=Math.round(usable[0].probability*100)+'% to '+Math.round(usable[usable.length-1].probability*100)+'%';
+  const coverage=available<hours*60*60*1000*.95
+    ?' · only '+historyCoverageLabel(available)+' of history is available; older points will appear as the dataset grows'
+    :'';
+  note.textContent=usable.length+' recorded observations · '+probabilities+' · '+requestedLabel+' selected'+coverage;
+}
+async function loadHistory(hours=24){
+  const request=++historyRequest;
+  setHistoryPeriod(hours);
+  const note=document.querySelector('#history-note');
+  note.textContent='Loading '+(HISTORY_LABELS[hours]||hours+'H')+' history…';
+  try{
+    const r=await fetch('/api/v1/market/history?'+new URLSearchParams({market_id:id,hours:String(hours)}));
+    if(!r.ok)throw new Error();
+    const points=await r.json();
+    if(request!==historyRequest)return;
+    drawHistory(points,hours);
+  }catch{
+    if(request===historyRequest)note.textContent='History is temporarily unavailable.';
+  }
+}
+async function loadIntelligence(){if(!id)return;loadHistory(24);try{const r=await fetch('/api/v1/market/signal?'+new URLSearchParams({market_id:id})),d=await r.json();document.querySelector('#signals').innerHTML=d.reasons.map(x=>'<li>'+x.replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]))+'</li>').join('')}catch{document.querySelector('#signals').innerHTML='<li class="empty">Signal is temporarily unavailable.</li>'}try{const r=await fetch('/api/v1/market/related?'+new URLSearchParams({market_id:id})),data=await r.json();document.querySelector('#related').innerHTML=data.length?data.map(item=>{const m=item.market;const label=item.relationship==='related'?'Related topic':'Possible connection';return '<a href="'+(m.slug?'/markets/'+encodeURIComponent(m.slug):'/market?'+new URLSearchParams({market_id:m.canonical_id}))+'"><strong>'+m.title.replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]))+'</strong><br><span class="muted">'+label+' · Not verified as an equivalent contract · '+m.venue+' · Trend '+Math.round(m.trend_score)+'</span></a>'}).join(''):'<p class="empty">No closely related market is available.</p>'}catch{document.querySelector('#related').innerHTML='<p class="empty">Related markets are temporarily unavailable.</p>'}}
 document.querySelectorAll('.period').forEach(b=>b.addEventListener('click',()=>loadHistory(Number(b.dataset.hours))));
 loadIntelligence();
 function timelineDetail(event){
