@@ -19,29 +19,40 @@ SCRIPT = r'''<script id="predibeacon-home-interaction-fixes-script">
  if(!hub||!venue||!markets)return;
  const normalized=v=>v==='kalshi'||v==='polymarket'?v:'all';
  const hrefFor=v=>v==='all'?'/?venue=all#markets':`/?venue=${encodeURIComponent(v)}#markets`;
- const syncUrl=v=>{
-   const u=new URL(window.location.href);
-   if(v==='all')u.searchParams.delete('venue');else u.searchParams.set('venue',v);
-   u.hash='markets';
-   history.replaceState({venue:v},'',u.pathname+(u.search||'')+u.hash);
- };
- const selectView=v=>{
+ const syncSelected=v=>{
    const value=v==='all'?'':v;
-   if(venue.value!==value){venue.value=value;venue.dispatchEvent(new Event('change',{bubbles:true}))}
+   venue.value=value;
    document.querySelectorAll('[data-venue-link]').forEach(x=>x.dataset.active=String(x.dataset.venueLink===v));
-   syncUrl(v);
-   requestAnimationFrame(()=>markets.scrollIntoView({behavior:'smooth',block:'start'}));
+   venue.dispatchEvent(new Event('change',{bubbles:true}));
+ };
+ const navigate=v=>{
+   const target=hrefFor(v);
+   const current=location.pathname+location.search+location.hash;
+   if(current===target){
+     syncSelected(v);
+     markets.scrollIntoView({behavior:'smooth',block:'start'});
+     return;
+   }
+   location.assign(target);
  };
  hub.querySelectorAll('[data-venue-link]').forEach(el=>{
    const v=normalized(el.dataset.venueLink);
    if(el.tagName==='A')el.setAttribute('href',hrefFor(v));
    el.setAttribute('title',v==='kalshi'?'Ver todos os mercados Kalshi':v==='polymarket'?'Ver todos os mercados Polymarket':'Ver Kalshi e Polymarket juntos');
-   el.addEventListener('click',()=>{
-     setTimeout(()=>selectView(v),0);
-   });
+   el.addEventListener('click',e=>{
+     e.preventDefault();
+     e.stopImmediatePropagation();
+     navigate(v);
+   },true);
  });
- const initial=normalized(new URLSearchParams(location.search).get('venue'));
- if(initial!=='all')setTimeout(()=>selectView(initial),0);
+ const params=new URLSearchParams(location.search);
+ const initial=normalized(params.get('venue'));
+ if(params.has('venue')){
+   setTimeout(()=>{
+     syncSelected(initial);
+     if(location.hash==='#markets')markets.scrollIntoView({block:'start'});
+   },0);
+ }
 })();
 </script>'''
 
