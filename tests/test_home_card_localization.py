@@ -23,11 +23,22 @@ def test_dynamic_card_localization_handles_new_cards_and_count_updates():
     enhanced = enhance_home_card_localization('<html><body><div id="grid"></div><p id="count"></p></body></html>')
 
     assert 'new MutationObserver(scan).observe(grid,{childList:true,subtree:true})' in enhanced
-    assert "card.dataset.locale=document.documentElement.lang||'en'" in enhanced
+    assert "if(card.dataset.locale!==lang)card.dataset.locale=lang" in enhanced
     assert "catalog[locale]||catalog.en" in enhanced
     assert "m[1]==='1'?t.market:t.markets" in enhanced
-    assert "count.textContent=t.unavailable" in enhanced
+    assert "next=t.unavailable" in enhanced
     assert "card.dataset.locale='pt-BR'" not in enhanced
+
+
+def test_localization_does_not_rewrite_already_localized_dom():
+    enhanced = enhance_home_card_localization('<html><body><div id="grid"></div><p id="count"></p></body></html>')
+
+    assert "current!==to" in enhanced
+    assert "source!==t.why" in enhanced
+    assert "next!==insight.innerHTML" in enhanced
+    assert "if(next!==null&&next!==value)count.textContent=next" in enhanced
+    assert "let scanning=false" in enhanced
+    assert "if(scanning)return" in enhanced
 
 
 def test_dynamic_card_localization_is_idempotent():
