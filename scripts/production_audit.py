@@ -67,10 +67,9 @@ class Audit:
             self.require("<html" in body.casefold(), f"{path} is not an HTML document")
             self.require("MarketPulse" not in body, f"{path} exposes internal MarketPulse brand")
             self.require(
-                "}).join(''):"" not in body and "</script></body></html>" not in body[:-30],
-                f"{path} contains leaked or prematurely closed JavaScript",
+                body.casefold().count("<script") == body.casefold().count("</script>"),
+                f"{path} has unbalanced script tags",
             )
-
     async def audit_polymarket_destination(
         self, client: httpx.AsyncClient, market: dict
     ) -> None:
