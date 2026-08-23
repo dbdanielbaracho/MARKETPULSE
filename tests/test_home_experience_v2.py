@@ -57,6 +57,27 @@ def test_home_v2_closing_mode_has_honest_empty_and_error_states():
     assert "if(!r.ok)throw 0" in enhanced
 
 
+def test_home_v2_structures_desktop_market_rows_without_removing_controls():
+    enhanced = enhance_home_v2(_base_home())
+
+    assert 'function structureCards()' in enhanced
+    assert "market.className='market-summary'" in enhanced
+    assert "prediction.className='prediction-summary'" in enhanced
+    assert "c.dataset.homeRow='ready'" in enhanced
+    assert 'grid-template-areas:"market prediction facts venue actions"' in enhanced
+    assert 'new MutationObserver(structureCards)' in enhanced
+    assert '.card[data-home-row="ready"] .actions' in enhanced
+    assert '.card[data-home-row="ready"] .platform-availability' in enhanced
+
+
+def test_home_v2_uses_css_beacon_instead_of_placeholder_chess_symbol():
+    enhanced = enhance_home_v2(_base_home())
+
+    assert 'class="beacon-graphic"' in enhanced
+    assert 'class="beacon-light"' in enhanced
+    assert '♜' not in enhanced
+
+
 def test_home_v2_explains_product_value_without_fake_market_examples():
     enhanced = enhance_home_v2(_base_home())
 
