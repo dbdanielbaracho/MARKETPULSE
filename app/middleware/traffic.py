@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import sqlite3
 
 from fastapi import FastAPI, Request
 
@@ -56,7 +57,7 @@ def register_traffic_middleware(app: FastAPI) -> None:
                 market_id=market_key,
                 channel=channel,
             )
-        except (OSError, ValueError, RuntimeError):
+        except (OSError, sqlite3.Error, ValueError, RuntimeError):
             # Telemetry must never make the public product unavailable.
             pass
         return response
