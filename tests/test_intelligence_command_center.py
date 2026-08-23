@@ -24,7 +24,8 @@ def test_intelligence_command_center_has_core_products():
 
 def test_consensus_and_disagreement_fail_closed_on_contract_equivalence():
     source = TOP.read_text(encoding="utf-8")
-    assert "if(v.equivalent_contracts)" in source
+    assert "/api/v1/compare/pairs?" in source
+    assert "verification.equivalent_contracts" in source
     assert "Simple mean of two verified equivalent contracts" in source
     assert "never labels lookalike contracts equivalent without verification" in source
     assert "not a statistical forecast" in source
