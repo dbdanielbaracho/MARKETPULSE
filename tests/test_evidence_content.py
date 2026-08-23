@@ -51,6 +51,16 @@ def test_high_score_with_diverse_fresh_and_strong_sources_can_create():
     assert candidate.decision == ContentDecision.CREATE
 
 
+def test_classification_uses_bundle_generation_clock_when_evaluated_later():
+    bundle = EvidenceBundle(market_id="kalshi:queued", generated_at=NOW, items=[
+        ev("https://agency.gov/release", EvidenceKind.OFFICIAL),
+        ev("https://news.example/story", EvidenceKind.NEWS),
+    ])
+    candidate = classify_content_candidate(market_id="kalshi:queued", score=90, evidence=bundle, policy=ContentPolicy())
+    assert candidate.decision == ContentDecision.CREATE
+    assert candidate.reason == "evidence_gate_passed"
+
+
 def test_stale_evidence_fails_closed():
     bundle = EvidenceBundle(market_id="kalshi:x", generated_at=NOW, items=[ev("https://agency.gov/old", EvidenceKind.OFFICIAL, 72)])
     candidate = classify_content_candidate(market_id="kalshi:x", score=90, evidence=bundle, policy=ContentPolicy(max_evidence_age_hours=48))
