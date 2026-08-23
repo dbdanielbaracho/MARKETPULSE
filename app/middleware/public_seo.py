@@ -43,19 +43,31 @@ def _inject_metadata(body: str, canonical: str) -> str:
     escaped_title = html.escape(title, quote=True)
     escaped_description = html.escape(description, quote=True)
     escaped_canonical = html.escape(canonical, quote=True)
+    lowered = body.casefold()
+    tags: list[str] = []
 
-    tags = (
-        f'<link rel="canonical" href="{escaped_canonical}">'
-        '<meta property="og:type" content="website">'
-        f'<meta property="og:site_name" content="PrediBeacon">'
-        f'<meta property="og:title" content="{escaped_title}">'
-        f'<meta property="og:description" content="{escaped_description}">'
-        f'<meta property="og:url" content="{escaped_canonical}">'
-        '<meta name="twitter:card" content="summary">'
-        f'<meta name="twitter:title" content="{escaped_title}">'
-        f'<meta name="twitter:description" content="{escaped_description}">'
-    )
-    return re.sub(r"</head>", tags + "</head>", body, count=1, flags=re.IGNORECASE)
+    if 'rel="canonical"' not in lowered and "rel='canonical'" not in lowered:
+        tags.append(f'<link rel="canonical" href="{escaped_canonical}">')
+    if 'property="og:type"' not in lowered:
+        tags.append('<meta property="og:type" content="website">')
+    if 'property="og:site_name"' not in lowered:
+        tags.append('<meta property="og:site_name" content="PrediBeacon">')
+    if 'property="og:title"' not in lowered:
+        tags.append(f'<meta property="og:title" content="{escaped_title}">')
+    if 'property="og:description"' not in lowered:
+        tags.append(f'<meta property="og:description" content="{escaped_description}">')
+    if 'property="og:url"' not in lowered:
+        tags.append(f'<meta property="og:url" content="{escaped_canonical}">')
+    if 'name="twitter:card"' not in lowered:
+        tags.append('<meta name="twitter:card" content="summary">')
+    if 'name="twitter:title"' not in lowered:
+        tags.append(f'<meta name="twitter:title" content="{escaped_title}">')
+    if 'name="twitter:description"' not in lowered:
+        tags.append(f'<meta name="twitter:description" content="{escaped_description}">')
+
+    if not tags:
+        return body
+    return re.sub(r"</head>", "".join(tags) + "</head>", body, count=1, flags=re.IGNORECASE)
 
 
 def register_public_seo_middleware(app: FastAPI) -> None:
@@ -85,9 +97,8 @@ def register_public_seo_middleware(app: FastAPI) -> None:
                 media_type=response.media_type,
             )
 
-        if 'rel="canonical"' not in body.casefold():
-            canonical = _public_base_url() + (path if path != "/" else "/")
-            body = _inject_metadata(body, canonical)
+        canonical = _public_base_url() + (path if path != "/" else "/")
+        body = _inject_metadata(body, canonical)
 
         headers = {key: value for key, value in response.headers.items() if key.lower() != "content-length"}
         return Response(
