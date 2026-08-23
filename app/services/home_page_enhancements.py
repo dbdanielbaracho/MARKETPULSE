@@ -2,8 +2,6 @@ from __future__ import annotations
 
 
 _HOME_STYLE = r'''<style id="predibeacon-home-platform-visibility-style">
-/* The per-card answer is the primary cross-platform experience. The old generic
-   comparison block duplicated that answer and forced users to reconcile two areas. */
 .compare-panel{display:none!important}
 .discovery-explainer{margin:.7rem 0 1.25rem;padding:.85rem 1rem;border-left:4px solid var(--accent);background:var(--panel);color:var(--muted);line-height:1.55}.discovery-explainer strong{color:var(--text)}
 .platform-availability{margin-top:.8rem;border:1px solid var(--line);border-radius:12px;padding:.75rem .85rem;background:rgba(0,0,0,.12);font-size:.84rem;line-height:1.45}.platform-availability strong{display:block;color:var(--text);margin-bottom:.2rem}.platform-availability .muted{color:var(--muted)}.platform-availability .verified-other{color:var(--accent);font-weight:850}.platform-availability .candidate-other{color:#fbbf24;font-weight:800}.platform-availability .single-venue{color:var(--muted);font-weight:750}
@@ -16,25 +14,28 @@ _HOME_SCRIPT = r'''<script id="predibeacon-home-platform-visibility-script">
   const inFlight=new Map();
   const otherVenue=venue=>venue==='kalshi'?'Polymarket':'Kalshi';
   const venueLabel=venue=>venue==='kalshi'?'Kalshi':'Polymarket';
-  const probability=v=>v==null?'':` · ${Math.round(Number(v)*100)}% there`;
+  const probability=v=>v==null?'':` · ${Math.round(Number(v)*100)}% lá`;
 
   const discoveryHeading=document.querySelector('#markets .section-title h2');
-  if(discoveryHeading)discoveryHeading.textContent='Markets worth watching now';
+  if(discoveryHeading)discoveryHeading.textContent='Mercados que merecem atenção agora';
   const gapHeading=document.querySelector('#disagreements h3');
-  if(gapHeading)gapHeading.textContent='Where Kalshi and Polymarket disagree most';
+  if(gapHeading)gapHeading.textContent='Onde Kalshi e Polymarket mais discordam';
 
   const sort=document.querySelector('#sort');
   if(sort){
-    const labels={trending:'PrediBeacon relevance',movers:'Biggest probability moves',volume:'Highest reported volume'};
+    const labels={trending:'Relevância PrediBeacon',movers:'Maiores movimentos de probabilidade',volume:'Maior volume informado'};
     for(const option of sort.options){if(labels[option.value])option.textContent=labels[option.value]}
+    sort.setAttribute('aria-label','Ordenar mercados');
   }
   const venueFilter=document.querySelector('label:has(#venue) .eyebrow');
-  if(venueFilter)venueFilter.textContent='VENUE';
+  if(venueFilter)venueFilter.textContent='PLATAFORMA';
+  const venueSelect=document.querySelector('#venue');
+  if(venueSelect)venueSelect.setAttribute('aria-label','Filtrar por plataforma');
 
   if(discoveryHeading&&!document.querySelector('.discovery-explainer')){
     const explainer=document.createElement('p');
     explainer.className='discovery-explainer';
-    explainer.innerHTML='<strong>Why this order?</strong> PrediBeacon relevance combines observed movement, reported activity, closing urgency, freshness and data completeness. Each card also tells you whether the same contract is verified on the other venue.';
+    explainer.innerHTML='<strong>Por que esta ordem?</strong> A relevância PrediBeacon combina movimento observado, atividade informada, proximidade do fechamento, atualização e qualidade dos dados. Cada mercado também informa se o mesmo contrato foi verificado na outra plataforma.';
     discoveryHeading.closest('.section-title')?.insertAdjacentElement('afterend',explainer);
   }
 
@@ -47,7 +48,7 @@ _HOME_SCRIPT = r'''<script id="predibeacon-home-platform-visibility-script">
     panel.dataset.venue=venue;
     panel.setAttribute('role','status');
     panel.setAttribute('aria-live','polite');
-    panel.innerHTML=`<strong>Available on ${venueLabel(venue)}</strong><span class="muted">Checking ${otherVenue(venue)} for the same contract…</span>`;
+    panel.innerHTML=`<strong>Disponível na ${venueLabel(venue)}</strong><span class="muted">Verificando ${otherVenue(venue)} para o mesmo contrato…</span>`;
     const actions=card.querySelector('.actions');
     if(actions)card.insertBefore(panel,actions);else card.append(panel);
     return panel;
@@ -56,20 +57,20 @@ _HOME_SCRIPT = r'''<script id="predibeacon-home-platform-visibility-script">
   function render(panel,result,venue){
     const current=venueLabel(venue),other=otherVenue(venue);
     if(!result){
-      panel.innerHTML=`<strong>Available on ${current}</strong><span class="muted">Cross-platform check temporarily unavailable.</span>`;
+      panel.innerHTML=`<strong>Disponível na ${current}</strong><span class="muted">Verificação entre plataformas temporariamente indisponível.</span>`;
       return;
     }
     const counterpart=result.counterpart;
     const verification=result.verification;
     if(counterpart&&verification?.equivalent_contracts){
-      panel.innerHTML=`<strong>Available on ${current}</strong><span class="verified-other">Also on ${venueLabel(counterpart.venue)} · verified equivalent${probability(counterpart.probability)}</span><br><span class="muted">Verification confidence ${verification.confidence}/100.</span>`;
+      panel.innerHTML=`<strong>Disponível na ${current}</strong><span class="verified-other">Também na ${venueLabel(counterpart.venue)} · equivalente verificado${probability(counterpart.probability)}</span><br><span class="muted">Confiança da verificação ${verification.confidence}/100.</span>`;
       return;
     }
     if(counterpart){
-      panel.innerHTML=`<strong>Available on ${current}</strong><span class="candidate-other">Similar market found on ${venueLabel(counterpart.venue)}, but it is not verified as the same contract.</span>`;
+      panel.innerHTML=`<strong>Disponível na ${current}</strong><span class="candidate-other">Mercado semelhante encontrado na ${venueLabel(counterpart.venue)}, mas não foi verificado como o mesmo contrato.</span>`;
       return;
     }
-    panel.innerHTML=`<strong>Available on ${current}</strong><span class="single-venue">No verified equivalent found on ${other}.</span>`;
+    panel.innerHTML=`<strong>Disponível na ${current}</strong><span class="single-venue">Nenhum equivalente verificado encontrado na ${other}.</span>`;
   }
 
   async function lookup(id,venue,panel){
@@ -78,7 +79,7 @@ _HOME_SCRIPT = r'''<script id="predibeacon-home-platform-visibility-script">
     const promise=(async()=>{
       try{
         const r=await fetch('/api/v1/market/cross-platform?'+new URLSearchParams({market_id:id,candidate_limit:'3'}));
-        if(!r.ok)throw new Error('unavailable');
+        if(!r.ok)throw new Error('indisponivel');
         return await r.json();
       }catch{return null}
     })();
@@ -119,10 +120,9 @@ _HOME_SCRIPT = r'''<script id="predibeacon-home-platform-visibility-script">
 
 
 def enhance_home_template(html: str) -> str:
-    """Make discovery answer ranking and venue availability directly on the homepage."""
-    # Avoid the browser translation ambiguity where English "Briefs" can become
-    # the Portuguese underwear term "Cuecas". This navigation item means editorial summaries.
-    enhanced = html.replace('>Briefs</a>', '>Resumos</a>', 1)
+    """Apresenta ranking e disponibilidade de plataformas nativamente em português."""
+    enhanced = html.replace('<html lang="en">', '<html lang="pt-BR">', 1)
+    enhanced = enhanced.replace('>Briefs</a>', '>Resumos</a>', 1)
     if 'id="predibeacon-home-platform-visibility-script"' in enhanced:
         return enhanced
     if "</head>" in enhanced:
