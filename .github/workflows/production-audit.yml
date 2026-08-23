@@ -1,0 +1,45 @@
+name: Production quality gate
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: predibeacon-production-audit
+  cancel-in-progress: false
+
+jobs:
+  production-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.13"
+      - run: pip install -r requirements.txt
+      - name: Read expected release version
+        id: release
+        shell: bash
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import re
+          from pathlib import Path
+          source = Path("app/main.py").read_text(encoding="utf-8")
+          match = re.search(r'^APP_VERSION = "([^"]+)"', source, re.MULTILINE)
+          if not match:
+              raise SystemExit("APP_VERSION not found")
+          print(f"version={match.group(1)}")
+          PY
+      - name: Audit deployed production
+        run: >-
+          python -m scripts.production_audit
+          --expected-version "${{ steps.release.outputs.version }}"
+          --deploy-timeout 600
+          --market-limit 50
