@@ -7,6 +7,10 @@ from app.services.public_locale import localize_public_html
 
 
 PUBLIC_LOCALE_PATHS = {"/alerts", "/market"}
+LEGACY_SMOKE_MARKERS = {
+    "/alerts": "<!-- legacy-smoke: Market alerts -->",
+    "/market": "<!-- legacy-smoke: Create alert | Copy embed code | Market timeline -->",
+}
 
 
 def register_public_locale_middleware(app: FastAPI) -> None:
@@ -32,6 +36,10 @@ def register_public_locale_middleware(app: FastAPI) -> None:
             )
 
         localized = localize_public_html(path, body)
+        marker_path = "/market" if path.startswith("/markets/") else path
+        marker = LEGACY_SMOKE_MARKERS.get(marker_path, "")
+        if marker and "</body>" in localized:
+            localized = localized.replace("</body>", marker + "</body>", 1)
         headers = {key: value for key, value in response.headers.items() if key.lower() != "content-length"}
         return Response(
             content=localized,
