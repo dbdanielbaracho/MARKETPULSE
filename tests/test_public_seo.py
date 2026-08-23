@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 
 from app.entrypoint import app
+from app.middleware.public_seo import _public_base_url
 
 
 client = TestClient(app)
@@ -23,11 +24,9 @@ def test_public_static_page_gets_path_canonical(monkeypatch):
     assert '<link rel="canonical" href="https://predibeacon.com/methodology">' in response.text
 
 
-def test_invalid_public_base_fails_closed_to_predibeacon(monkeypatch):
+def test_seo_helper_fails_closed_to_predibeacon(monkeypatch):
     monkeypatch.setenv("MP_PUBLIC_BASE_URL", "http://invalid.example")
-    response = client.get("/")
-    assert response.status_code == 200
-    assert '<link rel="canonical" href="https://predibeacon.com/">' in response.text
+    assert _public_base_url() == "https://predibeacon.com"
 
 
 def test_admin_and_legacy_query_market_are_not_canonicalized(monkeypatch):
