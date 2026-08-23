@@ -225,21 +225,33 @@ def test_every_platform_sort_category_combination_emits_correct_query(base_url):
         try:
             from urllib.parse import parse_qs, urlsplit
 
+            def matches(url: str, platform: str, sort: str, category: str) -> bool:
+                if "/api/v1/markets?" not in url or "closing-soon" in url:
+                    return False
+                q = parse_qs(urlsplit(url).query)
+                return (
+                    q.get("sort") == [sort]
+                    and q.get("limit") == ["100"]
+                    and q.get("venue", [""])[0] == platform
+                    and q.get("category", [""])[0] == category
+                )
+
             for platform in platforms:
                 _set_hidden_select(page, "#venue", platform)
                 for sort in sorts:
                     page.locator("#sort").select_option(sort)
                     for category in categories:
                         selector = f".chip[data-category='{category}']"
+                        before = len(seen)
                         page.locator(selector).click()
-                        page.wait_for_timeout(20)
-                        candidates = [u for u in seen if "/api/v1/markets?" in u and "closing-soon" not in u]
-                        assert candidates
-                        q = parse_qs(urlsplit(candidates[-1]).query)
-                        assert q.get("sort") == [sort]
-                        assert q.get("limit") == ["100"]
-                        assert q.get("venue", [""])[0] == platform
-                        assert q.get("category", [""])[0] == category
+                        page.wait_for_timeout(70)
+                        fresh = seen[before:]
+                        assert any(matches(u, platform, sort, category) for u in fresh), (
+                            platform,
+                            sort,
+                            category,
+                            fresh,
+                        )
                         expect(page.locator(selector)).to_have_attribute("aria-pressed", "true")
                         assert page.locator(".chip[aria-pressed='true']").count() == 1
             assert not errors
