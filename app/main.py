@@ -41,7 +41,7 @@ from app.storage.maintenance import BackupResult, DatabaseMaintenance
 from app.storage.revenue import RevenueStore
 from app.storage.snapshots import SnapshotStore
 
-APP_VERSION = "0.44.1"
+APP_VERSION = "0.45.0"
 
 
 class DiscoveryMarket(BaseModel):
