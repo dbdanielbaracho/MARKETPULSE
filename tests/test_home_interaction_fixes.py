@@ -8,16 +8,17 @@ def _home() -> str:
 def test_home_interactions_make_all_three_views_navigable():
     out = enhance_home_interactions(_home())
     assert "hrefFor=v=>v==='all'?'/?venue=all#markets'" in out
-    assert "u.searchParams.set('venue',v)" in out
-    assert "u.hash='markets'" in out
-    assert "markets.scrollIntoView({behavior:'smooth',block:'start'})" in out
+    assert "location.assign(target)" in out
+    assert "e.stopImmediatePropagation()" in out
     assert "venue.dispatchEvent(new Event('change',{bubbles:true}))" in out
+    assert "markets.scrollIntoView({behavior:'smooth',block:'start'})" in out
 
 
 def test_home_interactions_restore_direct_venue_links():
     out = enhance_home_interactions(_home())
-    assert "const initial=normalized(new URLSearchParams(location.search).get('venue'))" in out
-    assert "if(initial!=='all')setTimeout(()=>selectView(initial),0)" in out
+    assert "const initial=normalized(params.get('venue'))" in out
+    assert "if(params.has('venue'))" in out
+    assert "syncSelected(initial)" in out
     assert "Ver todos os mercados Kalshi" in out
     assert "Ver todos os mercados Polymarket" in out
     assert "Ver Kalshi e Polymarket juntos" in out
