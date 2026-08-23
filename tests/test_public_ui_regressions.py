@@ -26,5 +26,5 @@ def test_homepage_exposes_verified_disagreement_intelligence():
     assert "Biggest verified disagreements" in response.text
     assert "Unverified lookalikes are excluded" in response.text
     assert "function gap(" in response.text
-    assert "VERIFIED EQUIVALENT" in response.text
+    assert "Verified equivalent contracts." in response.text
     assert "Not ranked as a disagreement" in response.text
