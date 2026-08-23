@@ -52,7 +52,7 @@ def test_three_venue_choices_are_focusable_and_semantically_named(base_url):
                 control = page.locator(f"[data-venue-link='{venue}']").first
                 expect(control).to_be_visible()
                 control.focus()
-                assert page.evaluate("document.activeElement === arguments[0]", control.element_handle())
+                assert control.evaluate("el => document.activeElement === el")
                 accessible = (control.get_attribute("aria-label") or control.text_content() or "").strip()
                 assert expected_name.casefold() in accessible.casefold(), (venue, accessible)
             assert not errors
