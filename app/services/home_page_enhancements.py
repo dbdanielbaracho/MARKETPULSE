@@ -120,9 +120,11 @@ _HOME_SCRIPT = r'''<script id="predibeacon-home-platform-visibility-script">
 
 def enhance_home_template(html: str) -> str:
     """Make discovery answer ranking and venue availability directly on the homepage."""
-    if 'id="predibeacon-home-platform-visibility-script"' in html:
-        return html
-    enhanced = html
+    # Avoid the browser translation ambiguity where English "Briefs" can become
+    # the Portuguese underwear term "Cuecas". This navigation item means editorial summaries.
+    enhanced = html.replace('>Briefs</a>', '>Resumos</a>', 1)
+    if 'id="predibeacon-home-platform-visibility-script"' in enhanced:
+        return enhanced
     if "</head>" in enhanced:
         enhanced = enhanced.replace("</head>", _HOME_STYLE + "</head>", 1)
     if "</body>" in enhanced:
