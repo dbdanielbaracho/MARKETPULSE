@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 
 import httpx
@@ -30,13 +31,16 @@ def test_configuration_requires_token_and_destination(monkeypatch):
     assert telegram_configured() is True
 
 
-@pytest.mark.anyio
-async def test_send_uses_official_bot_endpoint_and_does_not_return_secret(monkeypatch):
-    monkeypatch.setenv("MP_TELEGRAM_BOT_TOKEN", "123:supersecret")
-    monkeypatch.setenv("MP_TELEGRAM_CHAT_ID", "@predibeacon")
-    transport = RecordingTransport([200])
-    async with httpx.AsyncClient(transport=transport) as client:
-        result = await send_telegram_message("PrediBeacon update", client=client)
+def test_send_uses_official_bot_endpoint_and_does_not_return_secret(monkeypatch):
+    async def run():
+        monkeypatch.setenv("MP_TELEGRAM_BOT_TOKEN", "123:supersecret")
+        monkeypatch.setenv("MP_TELEGRAM_CHAT_ID", "@predibeacon")
+        transport = RecordingTransport([200])
+        async with httpx.AsyncClient(transport=transport) as client:
+            result = await send_telegram_message("PrediBeacon update", client=client)
+        return result, transport
+
+    result, transport = asyncio.run(run())
     assert result.message_id == 321
     assert result.chat_id == "@predibeacon"
     request = transport.requests[0]
@@ -48,34 +52,43 @@ async def test_send_uses_official_bot_endpoint_and_does_not_return_secret(monkey
     assert "supersecret" not in repr(result)
 
 
-@pytest.mark.anyio
-async def test_transient_provider_failure_is_retried_bounded(monkeypatch):
-    monkeypatch.setenv("MP_TELEGRAM_BOT_TOKEN", "123:secret")
-    monkeypatch.setenv("MP_TELEGRAM_CHAT_ID", "@predibeacon")
-    transport = RecordingTransport([503, 200])
-    async with httpx.AsyncClient(transport=transport) as client:
-        result = await send_telegram_message("Update", client=client, attempts=2)
+def test_transient_provider_failure_is_retried_bounded(monkeypatch):
+    async def run():
+        monkeypatch.setenv("MP_TELEGRAM_BOT_TOKEN", "123:secret")
+        monkeypatch.setenv("MP_TELEGRAM_CHAT_ID", "@predibeacon")
+        transport = RecordingTransport([503, 200])
+        async with httpx.AsyncClient(transport=transport) as client:
+            result = await send_telegram_message("Update", client=client, attempts=2)
+        return result, transport
+
+    result, transport = asyncio.run(run())
     assert result.message_id == 321
     assert len(transport.requests) == 2
 
 
-@pytest.mark.anyio
-async def test_provider_failure_fails_closed_after_retry_budget(monkeypatch):
-    monkeypatch.setenv("MP_TELEGRAM_BOT_TOKEN", "123:secret")
-    monkeypatch.setenv("MP_TELEGRAM_CHAT_ID", "@predibeacon")
-    transport = RecordingTransport([503, 503])
-    async with httpx.AsyncClient(transport=transport) as client:
-        with pytest.raises(RuntimeError, match="bounded retries"):
-            await send_telegram_message("Update", client=client, attempts=2)
+def test_provider_failure_fails_closed_after_retry_budget(monkeypatch):
+    async def run():
+        monkeypatch.setenv("MP_TELEGRAM_BOT_TOKEN", "123:secret")
+        monkeypatch.setenv("MP_TELEGRAM_CHAT_ID", "@predibeacon")
+        transport = RecordingTransport([503, 503])
+        async with httpx.AsyncClient(transport=transport) as client:
+            with pytest.raises(RuntimeError, match="bounded retries"):
+                await send_telegram_message("Update", client=client, attempts=2)
+        return transport
+
+    transport = asyncio.run(run())
     assert len(transport.requests) == 2
 
 
-@pytest.mark.anyio
-async def test_invalid_message_never_contacts_provider(monkeypatch):
-    monkeypatch.setenv("MP_TELEGRAM_BOT_TOKEN", "123:secret")
-    monkeypatch.setenv("MP_TELEGRAM_CHAT_ID", "@predibeacon")
-    transport = RecordingTransport([200])
-    async with httpx.AsyncClient(transport=transport) as client:
-        with pytest.raises(ValueError):
-            await send_telegram_message("", client=client)
+def test_invalid_message_never_contacts_provider(monkeypatch):
+    async def run():
+        monkeypatch.setenv("MP_TELEGRAM_BOT_TOKEN", "123:secret")
+        monkeypatch.setenv("MP_TELEGRAM_CHAT_ID", "@predibeacon")
+        transport = RecordingTransport([200])
+        async with httpx.AsyncClient(transport=transport) as client:
+            with pytest.raises(ValueError):
+                await send_telegram_message("", client=client)
+        return transport
+
+    transport = asyncio.run(run())
     assert transport.requests == []
