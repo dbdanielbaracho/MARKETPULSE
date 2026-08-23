@@ -48,7 +48,7 @@ _TECH_PATTERNS = (
     r"\bnvidia\b", r"\bspacex\b", r"\btesla\b", r"\bapple\b",
     r"\bmicrosoft\b", r"\bgoogle\b", r"\bquantum\b", r"\brobot(?:s|ics)?\b",
     r"\bsemiconductor\b", r"\bsoftware\b", r"\btechnology\b",
-    r"\belon musk\b", r"\bai model\b",
+    r"\belon musk\b", r"\banthropic\b", r"\bai model\b",
 )
 
 _SPORTS_PATTERNS = (
