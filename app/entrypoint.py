@@ -6,10 +6,12 @@ from app.routes.commercial_intelligence import router as commercial_intelligence
 from app.routes.contract_verification import router as contract_verification_router
 from app.routes.public_contract_verification import router as public_contract_verification_router
 from app.routes.public_execution_quality import router as public_execution_quality_router
+from app.routes.public_trade_activity import router as public_trade_activity_router
 
 
 app.include_router(commercial_intelligence_router)
 app.include_router(contract_verification_router)
 app.include_router(public_contract_verification_router)
 app.include_router(public_execution_quality_router)
+app.include_router(public_trade_activity_router)
 register_market_intelligence_middleware(app)
