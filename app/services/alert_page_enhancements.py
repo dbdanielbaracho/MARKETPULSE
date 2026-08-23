@@ -27,5 +27,10 @@ def enhance_alerts_template(body: str) -> str:
         return body
     body = body.replace(panel_anchor, _SMART_ALERT_PANEL + panel_anchor, 1)
     body = body.replace(style_anchor, _SMART_ALERT_STYLE + style_anchor, 1)
+    body = body.replace(
+        "new Notification('PrediBeacon market alert',{body:m.title+' reached '+p+'%'})",
+        "await smartNotify('PrediBeacon market alert',m.title+' reached '+p+'%')",
+        1,
+    )
     body = body.replace(script_anchor, _SMART_ALERT_SCRIPT + script_anchor, 1)
     return body
