@@ -24,6 +24,25 @@ class KalshiAdapter:
         payload = response.json()
         return [self.normalize(item) for item in payload.get("markets", [])], payload.get("cursor")
 
+    async def fetch_orderbook(self, ticker: str, depth: int = 20) -> dict[str, Any]:
+        """Fetch public displayed order-book levels for one Kalshi market.
+
+        This endpoint is read-only. PrediBeacon uses it only to describe visible
+        spread/depth; it does not place orders or infer guaranteed execution.
+        """
+        if not ticker or len(ticker) > 200:
+            raise ValueError("invalid Kalshi ticker")
+        if depth < 1 or depth > 100:
+            raise ValueError("depth must be between 1 and 100")
+        async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+            response = await client.get(
+                f"{self.base_url}/markets/{ticker}/orderbook",
+                params={"depth": depth},
+            )
+            response.raise_for_status()
+        payload = response.json()
+        return payload if isinstance(payload, dict) else {}
+
     @staticmethod
     def normalize(item: dict[str, Any]) -> NormalizedMarket:
         probability = None
