@@ -24,6 +24,7 @@ def test_english_is_default_and_language_selector_lists_supported_locales():
 
 
 def test_language_choice_persists_in_cookie_and_redirect_is_safe():
+    client.cookies.clear()
     response = client.get("/set-language", params={"lang": "pt-BR", "next": "/top"}, follow_redirects=False)
     assert response.status_code == 303
     assert response.headers["location"] == "/top"
@@ -33,6 +34,7 @@ def test_language_choice_persists_in_cookie_and_redirect_is_safe():
 
 
 def test_portuguese_and_spanish_are_controlled_translations_not_browser_translation():
+    client.cookies.clear()
     pt = client.get("/", cookies={"predibeacon_lang": "pt-BR"})
     assert pt.headers["content-language"] == "pt-BR"
     assert '<html lang="pt-BR">' in pt.text
@@ -49,6 +51,7 @@ def test_portuguese_and_spanish_are_controlled_translations_not_browser_translat
 
 
 def test_other_languages_are_selectable_and_unknown_locale_falls_back_to_english():
+    client.cookies.clear()
     for locale in ("fr", "de", "it", "ja", "ko", "zh-CN"):
         page = client.get("/", cookies={"predibeacon_lang": locale})
         assert page.status_code == 200
@@ -62,6 +65,7 @@ def test_other_languages_are_selectable_and_unknown_locale_falls_back_to_english
 
 
 def test_arabic_sets_rtl_direction():
+    client.cookies.clear()
     page = client.get("/", cookies={"predibeacon_lang": "ar"})
     assert page.headers["content-language"] == "ar"
     assert '<html lang="ar" dir="rtl">' in page.text
@@ -69,6 +73,7 @@ def test_arabic_sets_rtl_direction():
 
 
 def test_market_contract_title_is_preserved_when_ui_language_changes():
+    client.cookies.clear()
     title = "Will the Federal Reserve cut rates before December 2026?"
     set_discovery_markets([
         DiscoveryMarket(
@@ -82,13 +87,14 @@ def test_market_contract_title_is_preserved_when_ui_language_changes():
     ])
     page = client.get("/market", params={"market_id": "kalshi:i18n-title"}, cookies={"predibeacon_lang": "pt-BR"})
     assert page.status_code == 200
-    # Contract/provider wording remains original. Only PrediBeacon interface copy is localized.
-    assert title not in page.text  # title is loaded from the API at runtime, not server-rendered
+    # The provider/contract title remains original in SEO and in the API; UI localization does not rewrite identity.
+    assert title in page.text
     api = client.get("/api/v1/market", params={"market_id": "kalshi:i18n-title"})
     assert api.json()["title"] == title
 
 
 def test_locale_dependent_public_html_varies_on_cookie():
+    client.cookies.clear()
     page = client.get("/alerts", cookies={"predibeacon_lang": "es"})
     assert page.headers["vary"]
     assert "Cookie" in page.headers["vary"]
