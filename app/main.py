@@ -1237,22 +1237,35 @@ def markets(
         seen.add(identity)
         deduplicated.append(item)
 
-    # When both venues are requested, interleave their independently ranked
-    # results so one provider cannot visually monopolize discovery.
+    # Relevance remains primary. After three consecutive cards from one
+    # provider, diversify only when the other provider's next score is at
+    # least 80% of the highest remaining score.
     if venue is None:
-        buckets = {
-            "kalshi": [item for item in deduplicated if item.venue == "kalshi"],
-            "polymarket": [item for item in deduplicated if item.venue == "polymarket"],
-        }
+        remaining = list(deduplicated)
         balanced: list[DiscoveryMarket] = []
-        first = deduplicated[0].venue if deduplicated else "polymarket"
-        order = (first, "kalshi" if first == "polymarket" else "polymarket")
-        while buckets["kalshi"] or buckets["polymarket"]:
-            for provider in order:
-                if buckets[provider]:
-                    balanced.append(buckets[provider].pop(0))
-                    if len(balanced) >= limit:
-                        return balanced
+        last_provider: str | None = None
+        streak = 0
+        while remaining and len(balanced) < limit:
+            selected_index = 0
+            leader = remaining[0]
+            if last_provider == leader.venue and streak >= 3:
+                alternative_index = next(
+                    (index for index, item in enumerate(remaining) if item.venue != leader.venue),
+                    None,
+                )
+                if alternative_index is not None:
+                    alternative = remaining[alternative_index]
+                    leader_score = float(key(leader))
+                    alternative_score = float(key(alternative))
+                    if leader_score <= 0 or alternative_score >= leader_score * 0.8:
+                        selected_index = alternative_index
+            selected = remaining.pop(selected_index)
+            balanced.append(selected)
+            if selected.venue == last_provider:
+                streak += 1
+            else:
+                last_provider = selected.venue
+                streak = 1
         return balanced
 
     return deduplicated[:limit]
