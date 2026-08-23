@@ -8,6 +8,7 @@ from fastapi.responses import Response
 from app.services.public_locale import DEFAULT_LOCALE, localize_public_html, normalize_locale
 from app.services.public_locale_extended import extend_public_translation
 from app.services.public_locale_trust import translate_trust_page
+from app.services.public_locale_content import translate_content_shell
 
 
 PUBLIC_LOCALE_PATHS = {
@@ -67,6 +68,7 @@ def register_public_locale_middleware(app: FastAPI) -> None:
         localized = localize_public_html(path, body, locale)
         localized = extend_public_translation(path, localized, locale)
         localized = translate_trust_page(path, localized, locale)
+        localized = translate_content_shell(path, localized, locale)
         localized = _preserve_selector_query(localized, request)
         headers = {key: value for key, value in response.headers.items() if key.lower() != "content-length"}
         headers["Content-Language"] = locale
