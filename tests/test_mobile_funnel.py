@@ -30,5 +30,5 @@ def test_mobile_funnel_is_idempotent():
     once = enhance_mobile_funnel(source)
     twice = enhance_mobile_funnel(once)
     assert once == twice
-    assert once.count('predibeacon-mobile-funnel-style') == 1
-    assert once.count('pb-mobile-nav') == 1
+    assert once.count('id="predibeacon-mobile-funnel-style"') == 1
+    assert once.count('class="pb-mobile-nav"') == 1
