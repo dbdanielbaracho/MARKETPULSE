@@ -91,6 +91,7 @@ async def _fetch_facts(market) -> VenueContractFacts:
         return facts
 
 
+@router.get("/compare", response_model=PublicVerifiedCompareView)
 @router.get("/compare/verified", response_model=PublicVerifiedCompareView)
 async def public_verified_compare(
     response: Response,
