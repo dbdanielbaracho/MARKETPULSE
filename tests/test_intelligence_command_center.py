@@ -8,7 +8,7 @@ MARKET = Path("app/templates/market.html")
 def test_intelligence_command_center_has_core_products():
     source = TOP.read_text(encoding="utf-8")
     for label in (
-        "SMART MOVERS",
+        "Smart movers",
         "BREAKING MARKETS",
         "FRESH MARKETS",
         "CATALYST MONITOR",
