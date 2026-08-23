@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 
 _TRUE = {"1", "true", "yes", "on"}
 _FALSE = {"0", "false", "no", "off", ""}
+_PARTNER_ID = re.compile(r"^[A-Za-z0-9._:-]{1,200}$")
 
 
 def _flag(name: str, default: bool = False) -> bool:
@@ -20,11 +22,14 @@ def _flag(name: str, default: bool = False) -> bool:
 
 
 def validate_commercial_partner_config(venue: str) -> None:
-    """Fail closed when a venue is marked commercial without partner identity.
+    """Fail closed when evidence-bearing commercial configuration is invalid.
 
-    Commercial verification is an evidence-bearing claim. The runtime may use an
-    organic route with no partner ID, but it must never start with a venue marked
-    commercially verified while the partner identity is missing.
+    Commercial verification is an evidence-bearing claim. Organic routing may
+    exist with no partner identity, but a commercially verified venue requires
+    an opaque partner identity whose syntax is bounded and allowlisted. The
+    identity itself must never be rendered into public product surfaces except
+    where a provider contract explicitly requires it inside the server-created
+    outbound destination.
     """
     normalized = venue.strip().upper()
     if normalized not in {"KALSHI", "POLYMARKET"}:
@@ -34,6 +39,10 @@ def validate_commercial_partner_config(venue: str) -> None:
     if verified and not partner_id:
         raise ValueError(
             f"MP_{normalized}_PARTNER_ID is required when MP_{normalized}_COMMERCIAL_VERIFIED is enabled"
+        )
+    if partner_id and not _PARTNER_ID.fullmatch(partner_id):
+        raise ValueError(
+            f"MP_{normalized}_PARTNER_ID must be 1-200 characters using only letters, digits, dot, underscore, colon, or hyphen"
         )
 
 
