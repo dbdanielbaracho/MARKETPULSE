@@ -226,7 +226,7 @@ def test_every_platform_sort_category_combination_emits_correct_query(base_url):
             from urllib.parse import parse_qs, urlsplit
 
             def matches(url: str, platform: str, sort: str, category: str) -> bool:
-                if "/api/v1/markets?" not in url or "closing-soon" in url:
+                if "/api/v1/markets" not in url or "closing-soon" in url:
                     return False
                 q = parse_qs(urlsplit(url).query)
                 return (
