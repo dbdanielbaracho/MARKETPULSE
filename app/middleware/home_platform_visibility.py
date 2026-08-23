@@ -4,6 +4,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import Response
 
 from app.services.home_page_enhancements import enhance_home_template
+from app.services.home_experience_v2 import enhance_home_v2
 
 
 def register_home_platform_visibility_middleware(app: FastAPI) -> None:
@@ -26,7 +27,7 @@ def register_home_platform_visibility_middleware(app: FastAPI) -> None:
                 media_type=response.media_type,
             )
 
-        enhanced = enhance_home_template(body)
+        enhanced = enhance_home_v2(enhance_home_template(body))
         headers = {key: value for key, value in response.headers.items() if key.lower() != "content-length"}
         return Response(
             content=enhanced,
