@@ -41,7 +41,7 @@ from app.storage.maintenance import BackupResult, DatabaseMaintenance
 from app.storage.revenue import RevenueStore
 from app.storage.snapshots import SnapshotStore
 
-APP_VERSION = "0.50.1"
+APP_VERSION = "0.50.2"
 
 
 class DiscoveryMarket(BaseModel):
@@ -1239,7 +1239,7 @@ def markets(
 
     # Relevance remains primary. After three consecutive cards from one
     # provider, diversify only when the other provider's next score is at
-    # least 80% of the highest remaining score.
+    # no more than 10 score points behind the highest remaining result.
     if venue is None:
         remaining = list(deduplicated)
         balanced: list[DiscoveryMarket] = []
@@ -1257,7 +1257,7 @@ def markets(
                     alternative = remaining[alternative_index]
                     leader_score = float(key(leader))
                     alternative_score = float(key(alternative))
-                    if leader_score <= 0 or alternative_score >= leader_score * 0.8:
+                    if leader_score <= 0 or alternative_score >= leader_score - 10:
                         selected_index = alternative_index
             selected = remaining.pop(selected_index)
             balanced.append(selected)
