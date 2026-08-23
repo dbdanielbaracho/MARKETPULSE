@@ -18,8 +18,8 @@ def test_alerts_do_not_ask_customers_for_market_ids():
     page = client.get("/alerts")
     assert page.status_code == 200
     assert 'id="market-id"' not in page.text
-    assert "Escolher mercado" in page.text
-    assert "Criar alerta" in page.text
+    assert "Choose market" in page.text
+    assert "Create alert" in page.text
     assert "predibeacon-watchlist" in page.text
 
 
@@ -35,9 +35,9 @@ def test_watchlist_is_an_actionable_intelligence_view():
 def test_market_detail_explains_attention_and_next_actions():
     page = client.get("/market")
     assert page.status_code == 200
-    assert "SINAL ATUAL DO MERCADO" in page.text
-    assert "POR QUE IMPORTA" in page.text
-    assert "Tempo restante" in page.text
-    assert "Última observação" in page.text
-    assert "Criar alerta" in page.text
-    assert "Relacionado não significa equivalente" in page.text
+    assert "CURRENT MARKET SIGNAL" in page.text
+    assert "WHY IT MATTERS" in page.text
+    assert "Time remaining" in page.text
+    assert "Last observed" in page.text
+    assert "Create alert" in page.text
+    assert "Related does not mean equivalent" in page.text
