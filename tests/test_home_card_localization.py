@@ -1,19 +1,20 @@
 from app.services.home_card_localization import enhance_home_card_localization
 
 
-def test_dynamic_card_localization_covers_customer_facing_labels():
+def test_dynamic_card_localization_covers_customer_facing_labels_by_locale():
     enhanced = enhance_home_card_localization('<html><body><div id="grid"></div><p id="count"></p></body></html>')
 
     for phrase in (
-        "text(status,'Open','Aberto')",
-        "text(status,'Closed','Encerrado')",
-        '<strong>Por que importa:</strong>',
-        "first.textContent='Volume '",
-        "first.textContent='Fecha em '",
-        "first.textContent='Relevância '",
-        "text(primary,'View PrediBeacon analysis','Ver análise PrediBeacon')",
-        "text(watch,'Watch','Acompanhar')",
-        "text(watch,'Watching','Acompanhando')",
+        "document.documentElement.lang",
+        "en:{open:'Open',closed:'Closed'",
+        "'pt-br':{open:'Aberto',closed:'Encerrado'",
+        "es:{open:'Abierto',closed:'Cerrado'",
+        "analysis:'View PrediBeacon analysis'",
+        "analysis:'Ver análise PrediBeacon'",
+        "analysis:'Ver análisis PrediBeacon'",
+        "watch:'Watch',watching:'Watching'",
+        "watch:'Acompanhar',watching:'Acompanhando'",
+        "watch:'Seguir',watching:'Siguiendo'",
     ):
         assert phrase in enhanced
 
@@ -22,10 +23,11 @@ def test_dynamic_card_localization_handles_new_cards_and_count_updates():
     enhanced = enhance_home_card_localization('<html><body><div id="grid"></div><p id="count"></p></body></html>')
 
     assert 'new MutationObserver(scan).observe(grid,{childList:true,subtree:true})' in enhanced
-    assert "card.dataset.locale='pt-BR'" in enhanced
-    assert ".replace(/\\bmarkets\\b/g,'mercados')" in enhanced
-    assert ".replace(/\\bmarket\\b/g,'mercado')" in enhanced
-    assert ".replace('Unavailable','Indisponível')" in enhanced
+    assert "card.dataset.locale=document.documentElement.lang||'en'" in enhanced
+    assert "catalog[locale]||catalog.en" in enhanced
+    assert "m[1]==='1'?t.market:t.markets" in enhanced
+    assert "count.textContent=t.unavailable" in enhanced
+    assert "card.dataset.locale='pt-BR'" not in enhanced
 
 
 def test_dynamic_card_localization_is_idempotent():
