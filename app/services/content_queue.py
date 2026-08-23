@@ -45,7 +45,14 @@ def classify_content_candidate(*, market_id: str, score: float, evidence: Eviden
 
     bundle = evidence.deduplicated()
     max_age = timedelta(hours=policy.max_evidence_age_hours)
-    fresh = [item for item in bundle.items if item.freshness(max_age=max_age) == EvidenceFreshness.FRESH]
+    # Evaluate every item against the bundle's generation timestamp. This makes
+    # one classification internally consistent and deterministic even when a
+    # queued bundle is evaluated later than it was collected.
+    fresh = [
+        item
+        for item in bundle.items
+        if item.freshness(max_age=max_age, now=bundle.generated_at) == EvidenceFreshness.FRESH
+    ]
     publisher_count = len({item.source_domain for item in fresh})
     strong_source = any(item.kind in {EvidenceKind.OFFICIAL, EvidenceKind.VENUE} for item in fresh)
 
