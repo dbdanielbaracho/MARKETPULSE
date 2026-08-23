@@ -41,7 +41,7 @@ def test_limit_is_bounded():
     assert response.status_code == 422
 
 
-def test_equal_scores_are_balanced_across_venues():
+def test_equal_scores_limit_provider_streak_to_three():
     now = datetime(2026, 8, 22, tzinfo=timezone.utc)
     set_discovery_markets([
         DiscoveryMarket(canonical_id=f"kalshi:{index}", title=f"Kalshi {index}", venue="kalshi", probability=.5, volume_usd=100, trend_score=30, observed_at=now)
@@ -51,7 +51,7 @@ def test_equal_scores_are_balanced_across_venues():
         for index in range(3)
     ])
     data = client.get("/api/v1/markets?sort=trending&limit=4").json()
-    assert [item["venue"] for item in data] == ["kalshi", "polymarket", "kalshi", "polymarket"]
+    assert [item["venue"] for item in data] == ["kalshi", "kalshi", "kalshi", "polymarket"]
 
 
 def test_relevance_outranks_forced_provider_balance():
