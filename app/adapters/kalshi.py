@@ -24,6 +24,16 @@ class KalshiAdapter:
         payload = response.json()
         return [self.normalize(item) for item in payload.get("markets", [])], payload.get("cursor")
 
+    async def fetch_market(self, ticker: str) -> dict[str, Any]:
+        """Fetch full public contract metadata, including venue resolution rules."""
+        if not ticker or len(ticker) > 200:
+            raise ValueError("invalid Kalshi ticker")
+        async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+            response = await client.get(f"{self.base_url}/markets/{ticker}")
+            response.raise_for_status()
+        payload = response.json()
+        return payload if isinstance(payload, dict) else {}
+
     async def fetch_orderbook(self, ticker: str, depth: int = 20) -> dict[str, Any]:
         """Fetch public displayed order-book levels for one Kalshi market.
 
