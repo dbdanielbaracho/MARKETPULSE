@@ -6,6 +6,7 @@ from typing import Any
 import httpx
 
 from app.domain.markets import NormalizedMarket
+from app.services.categories import classify_market_category
 
 
 class KalshiAdapter:
@@ -43,11 +44,12 @@ class KalshiAdapter:
         close_time = item.get("close_time")
         closes_at = datetime.fromisoformat(close_time.replace("Z", "+00:00")) if close_time else None
         ticker = str(item.get("ticker") or item.get("id") or "")
+        title = str(item.get("title") or item.get("subtitle") or ticker)
         return NormalizedMarket(
             venue="kalshi",
             venue_market_id=ticker,
-            title=str(item.get("title") or item.get("subtitle") or ticker),
-            category=item.get("category"),
+            title=title,
+            category=classify_market_category(title=title, provider_category=item.get("category"), raw=item),
             yes_probability=probability,
             volume_usd=(
                 float(item["volume_fp"])
