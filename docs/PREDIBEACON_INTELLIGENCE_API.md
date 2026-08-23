@@ -25,16 +25,46 @@ Scope: `history:read`
 - `GET /api/v1/compare` — contract-equivalence decision gate.
 - `GET /api/v1/market/related` — related markets, explicitly never equivalent.
 
-## Intelligence products built from these primitives
+## Reusable intelligence engine
+
+The product layer now includes bounded, testable calculations for:
+
+- Attention Score — strength of current market attention, not a forecast.
+- Market Quality — completeness, freshness and usable history, not outcome confidence.
+- Breaking Signal — recent acceleration from recorded probability/volume history without causal claims.
+- Verified Consensus — mean probability only after the contract-equivalence gate passes.
+- Verified Disagreement — probability gap classification for verified equivalent contracts.
+
+## Execution-quality data layer
+
+PrediBeacon now has read-only order-book adapters and a venue-neutral execution-quality model.
+
+- Kalshi order books normalize YES bids and NO bids into a comparable YES-side bid/ask book.
+- Polymarket uses the public CLOB book for an outcome token.
+- Execution Quality uses observable spread and displayed depth only.
+- It is not a fill guarantee, liquidity guarantee, expected-return score, or best-execution claim.
+
+This layer is intentionally separate from aggregate reported volume.
+
+## Large-trade data layer
+
+PrediBeacon now has public trade-history adapters for both supported venues and a conservative large-trade detector.
+
+- A signal must clear both an absolute observed-value threshold and a multiple of the local sample median.
+- Kalshi data is not assigned a trader identity when the venue does not expose one.
+- A Polymarket wallet identifier is retained only when the public venue feed supplies it.
+- Large-trade signals do not imply insider knowledge, manipulation, causation, profitability or future direction.
+
+## Consumer intelligence products
 
 ### Smart Movers
 Ranks movement using probability change, attention, reported activity, freshness and time-to-close. It is more selective than sorting by absolute percentage move alone.
 
 ### Breaking Markets
-Uses stored history to identify fresh acceleration in probability and reported volume. It deliberately does not claim that a whale caused the move because PrediBeacon does not yet ingest sufficient trade-level identity data to prove that.
+Uses stored history to identify fresh acceleration in probability and reported volume.
 
 ### Market Quality
-Scores completeness and reliability of the displayed signal using data availability, recency and usable history. Market Quality is not outcome confidence.
+Scores completeness and reliability of the displayed signal using data availability, recency and usable history.
 
 ### Verified Consensus
 Computes a simple mean only after two contracts pass the equivalence gate. The consumer product labels it as a market consensus, not a statistical forecast.
@@ -43,10 +73,10 @@ Computes a simple mean only after two contracts pass the equivalence gate. The c
 Ranks the probability gap between verified equivalent contracts. Lookalike contracts never enter this ranking.
 
 ### Venue Activity Comparison
-Compares reported volume for verified equivalent contracts. This is an activity proxy only and does not assert better price, spread, depth, fees or execution.
+Compares reported volume for verified equivalent contracts. This remains an activity proxy and is separate from the new execution-quality layer.
 
-## Next data adapters required for higher-order products
+## Next product wiring
 
-The architecture should accept future venue adapters without changing the consumer intelligence model. New providers must normalize to the same canonical market representation and pass equivalent-contract verification before being included in consensus or disagreement products.
+The next commercial and consumer surfaces should expose the reusable intelligence engine, execution-quality snapshots and large-trade signals behind the existing API-key/rate-limit infrastructure. These features should be wired only after their data is available for the selected market and should fail closed when an order book, trade sample, or verified equivalent contract is unavailable.
 
-Trade-level or order-book adapters are required before PrediBeacon can truthfully expose products such as large-trader detection, spread/depth quality, executable arbitrage, or best-execution routing. Those labels must not be used based on aggregate volume alone.
+Executable-arbitrage labels and automated best-execution routing remain gated. They require validated fees, venue-specific settlement/friction assumptions, live executable quotes and jurisdiction-aware routing in addition to the data layers above.
