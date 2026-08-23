@@ -8,6 +8,7 @@ from app.middleware.relevance_pages import register_relevance_pages_middleware
 from app.routes.commercial_intelligence import router as commercial_intelligence_router
 from app.routes.contract_verification import router as contract_verification_router
 from app.routes.public_alert_signals import router as public_alert_signals_router
+from app.routes.public_closing_soon import router as public_closing_soon_router
 from app.routes.public_contract_verification import router as public_contract_verification_router
 from app.routes.public_execution_quality import router as public_execution_quality_router
 from app.routes.public_market_comparison import router as public_market_comparison_router
@@ -19,6 +20,7 @@ from app.routes.public_venue_conditions import router as public_venue_conditions
 app.include_router(commercial_intelligence_router)
 app.include_router(contract_verification_router)
 app.include_router(public_alert_signals_router)
+app.include_router(public_closing_soon_router)
 app.include_router(public_contract_verification_router)
 app.include_router(public_execution_quality_router)
 app.include_router(public_market_comparison_router)
