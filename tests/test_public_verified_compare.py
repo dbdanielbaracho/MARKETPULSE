@@ -41,12 +41,14 @@ def _clear_cache():
     public_compare._FACT_CACHE.clear()
 
 
-def test_public_verified_compare_is_registered_and_templates_use_it():
-    assert "/api/v1/compare/verified" in app.openapi()["paths"]
+def test_public_verified_compare_and_pair_discovery_are_registered_and_templates_use_pairs():
+    paths = app.openapi()["paths"]
+    assert "/api/v1/compare/verified" in paths
+    assert "/api/v1/compare/pairs" in paths
     index = open("app/templates/index.html", encoding="utf-8").read()
     top = open("app/templates/top.html", encoding="utf-8").read()
-    assert "/api/v1/compare/verified?" in index
-    assert "/api/v1/compare/verified?" in top
+    assert "/api/v1/compare/pairs?" in index
+    assert "/api/v1/compare/pairs?" in top
 
 
 def test_public_verified_compare_uses_resolution_evidence_and_cache(monkeypatch):
@@ -87,6 +89,7 @@ def test_public_verified_compare_uses_resolution_evidence_and_cache(monkeypatch)
     assert payload["gap_points"] == 4
     assert payload["source_match"] is True
     assert payload["confidence"] >= 85
+    assert payload["candidate_score"] is not None
     assert first.headers["cache-control"].startswith("public, max-age=60")
     assert calls == {"kalshi": 1, "polymarket": 1}
     _clear_cache()
