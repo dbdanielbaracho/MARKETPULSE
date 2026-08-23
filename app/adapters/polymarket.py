@@ -51,6 +51,18 @@ class PolymarketAdapter:
         closes_at = datetime.fromisoformat(end_date.replace("Z", "+00:00")) if isinstance(end_date, str) and end_date else None
         market_id = str(item.get("id") or item.get("conditionId") or item.get("slug") or "")
         slug = item.get("slug")
+        event_slug = None
+        events = item.get("events")
+        if isinstance(events, list):
+            event_slug = next(
+                (
+                    event.get("slug")
+                    for event in events
+                    if isinstance(event, dict) and event.get("slug")
+                ),
+                None,
+            )
+        destination_slug = event_slug or slug
         title = str(item.get("question") or item.get("title") or market_id)
         return NormalizedMarket(
             venue="polymarket",
@@ -60,6 +72,6 @@ class PolymarketAdapter:
             yes_probability=probability,
             volume_usd=float(item["volumeNum"]) if isinstance(item.get("volumeNum"), (int, float)) else None,
             closes_at=closes_at,
-            source_url=f"https://polymarket.com/event/{slug}" if slug else None,
+            source_url=f"https://polymarket.com/event/{destination_slug}" if destination_slug else None,
             raw=item,
         )
