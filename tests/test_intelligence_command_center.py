@@ -8,24 +8,18 @@ MARKET = Path("app/templates/market.html")
 def test_intelligence_command_center_has_core_products():
     source = TOP.read_text(encoding="utf-8")
     for label in (
-        "Smart movers",
-        "BREAKING MARKETS",
-        "FRESH MARKETS",
-        "CATALYST MONITOR",
-        "RESOLUTION CALENDAR",
-        "MARKET QUALITY",
-        "CATEGORY HEAT",
-        "VERIFIED CONSENSUS",
-        "VERIFIED DISAGREEMENTS",
-        "VENUE COMPARISON",
+        "Smart movers", "BREAKING MARKETS", "FRESH MARKETS", "CATALYST MONITOR",
+        "RESOLUTION CALENDAR", "MARKET QUALITY", "CATEGORY HEAT", "VERIFIED CONSENSUS",
+        "VERIFIED DISAGREEMENTS", "VENUE COMPARISON",
     ):
         assert label in source
 
 
 def test_consensus_and_disagreement_fail_closed_on_contract_equivalence():
     source = TOP.read_text(encoding="utf-8")
-    assert "if(v.equivalent_contracts)" in source
-    assert "Simple mean of two verified equivalent contracts" in source
+    assert "/api/v1/compare/pairs?" in source
+    assert "verified_only:'true'" in source
+    assert "Verified confidence" in source
     assert "never labels lookalike contracts equivalent without verification" in source
     assert "not a statistical forecast" in source
 
