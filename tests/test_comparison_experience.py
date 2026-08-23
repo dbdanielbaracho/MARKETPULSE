@@ -24,7 +24,7 @@ def test_discovery_cards_explain_relevance_platform_and_rank():
     assert "venue-badge" in source
     assert "POLYMARKET" in source
     assert "KALSHI" in source
-    assert "View analysis" in source
+    assert "View PrediBeacon analysis" in source
     assert "Why it matters:" in source
     assert "Reported volume" not in source or "Volume" in source
     assert "function why" in source
