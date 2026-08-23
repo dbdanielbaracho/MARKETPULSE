@@ -43,6 +43,69 @@ def _preserve_selector_query(localized: str, request: Request) -> str:
     return localized.replace(f"&next={plain_next}\"", f"&next={full_next}\"")
 
 
+def _map_browser_language(tag: str) -> str | None:
+    normalized = tag.strip().replace("_", "-").casefold()
+    if not normalized or normalized == "*":
+        return None
+    if normalized.startswith("pt"):
+        return "pt-BR"
+    if normalized.startswith("es"):
+        return "es"
+    if normalized.startswith("en"):
+        return "en"
+    if normalized.startswith("fr"):
+        return "fr"
+    if normalized.startswith("de"):
+        return "de"
+    if normalized.startswith("it"):
+        return "it"
+    if normalized.startswith("ja"):
+        return "ja"
+    if normalized.startswith("ko"):
+        return "ko"
+    if normalized.startswith("ar"):
+        return "ar"
+    if normalized.startswith("zh"):
+        return "zh-CN"
+    return None
+
+
+def _locale_from_accept_language(header: str | None) -> str:
+    if not header:
+        return DEFAULT_LOCALE
+
+    ranked: list[tuple[float, int, str]] = []
+    for index, item in enumerate(header.split(",")):
+        parts = [part.strip() for part in item.split(";") if part.strip()]
+        if not parts:
+            continue
+        language = parts[0]
+        quality = 1.0
+        for parameter in parts[1:]:
+            if not parameter.lower().startswith("q="):
+                continue
+            try:
+                quality = float(parameter.split("=", 1)[1])
+            except ValueError:
+                quality = 0.0
+        if quality <= 0:
+            continue
+        mapped = _map_browser_language(language)
+        if mapped:
+            ranked.append((quality, -index, mapped))
+
+    if not ranked:
+        return DEFAULT_LOCALE
+    ranked.sort(reverse=True)
+    return ranked[0][2]
+
+
+def _resolve_locale(cookie_locale: str | None, accept_language: str | None) -> str:
+    if cookie_locale:
+        return normalize_locale(cookie_locale)
+    return _locale_from_accept_language(accept_language)
+
+
 def register_public_locale_middleware(app: FastAPI) -> None:
     @app.middleware("http")
     async def public_locale_presentation(request: Request, call_next):
@@ -64,7 +127,10 @@ def register_public_locale_middleware(app: FastAPI) -> None:
                 media_type=response.media_type,
             )
 
-        locale = normalize_locale(request.cookies.get("predibeacon_lang") or DEFAULT_LOCALE)
+        locale = _resolve_locale(
+            request.cookies.get("predibeacon_lang"),
+            request.headers.get("accept-language"),
+        )
         localized = localize_public_html(path, body, locale)
         localized = extend_public_translation(path, localized, locale)
         localized = translate_trust_page(path, localized, locale)
@@ -75,6 +141,7 @@ def register_public_locale_middleware(app: FastAPI) -> None:
         vary = headers.get("Vary", "")
         vary_values = {item.strip() for item in vary.split(",") if item.strip()}
         vary_values.add("Cookie")
+        vary_values.add("Accept-Language")
         headers["Vary"] = ", ".join(sorted(vary_values))
         return Response(
             content=localized,
