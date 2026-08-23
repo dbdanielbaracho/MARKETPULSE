@@ -35,6 +35,14 @@ def test_home_enhancer_explains_ranking_and_renames_sort_choices():
     assert 'observed movement, reported activity, closing urgency, freshness and data completeness' in enhanced
 
 
+def test_home_enhancer_uses_resumos_instead_of_ambiguous_briefs_label():
+    source = '<html><head></head><body><nav><a href="/articles">Briefs</a></nav><div id="grid"></div></body></html>'
+    enhanced = enhance_home_template(source)
+
+    assert '<a href="/articles">Resumos</a>' in enhanced
+    assert '>Briefs</a>' not in enhanced
+
+
 def test_home_enhancer_uses_lazy_lookup_and_is_idempotent():
     source = '<html><head></head><body><div id="grid"></div></body></html>'
     enhanced = enhance_home_template(source)
