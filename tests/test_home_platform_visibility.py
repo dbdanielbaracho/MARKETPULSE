@@ -14,6 +14,15 @@ def test_home_enhancer_adds_visible_cross_platform_status():
     assert "candidate_limit:'3'" in enhanced
 
 
+def test_home_enhancer_prioritizes_cards_over_duplicate_comparison_panel():
+    source = '<html><head></head><body><div class="compare-panel"></div><section id="markets"><div class="section-title"><h2>Most relevant markets now</h2></div><div id="grid"></div></section><section id="disagreements"><h3>Biggest verified disagreements</h3></section></body></html>'
+    enhanced = enhance_home_template(source)
+
+    assert '.compare-panel{display:none!important}' in enhanced
+    assert "Markets worth watching now" in enhanced
+    assert "Where Kalshi and Polymarket disagree most" in enhanced
+
+
 def test_home_enhancer_uses_lazy_lookup_and_is_idempotent():
     source = '<html><head></head><body><div id="grid"></div></body></html>'
     enhanced = enhance_home_template(source)
