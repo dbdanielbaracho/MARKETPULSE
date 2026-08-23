@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 import app.main as core
 from app.entrypoint import app
 from app.main import DiscoveryMarket
+from app.routes.admin_launch_readiness import _partner_mode
 
 
 client = TestClient(app)
@@ -59,21 +60,14 @@ def test_launch_readiness_is_private_and_partner_status_does_not_fake_approval(t
     assert data["partner_monetization"]["active_partner_venues"] == []
 
 
-def test_partner_mode_requires_both_verification_and_partner_id(tmp_path, monkeypatch):
-    token = "b" * 40
-    monkeypatch.setenv("MP_ADMIN_TOKEN", token)
-    monkeypatch.setenv("MP_DATABASE_PATH", str(tmp_path / "launch.db"))
-    monkeypatch.setenv("MP_PUBLIC_BASE_URL", "https://predibeacon.com")
+def test_partner_mode_reports_partner_only_with_both_verification_and_identity(monkeypatch):
     monkeypatch.setenv("MP_KALSHI_COMMERCIAL_VERIFIED", "true")
     monkeypatch.setenv("MP_KALSHI_PARTNER_ID", "partner-123")
-    monkeypatch.setenv("MP_POLYMARKET_COMMERCIAL_VERIFIED", "true")
-    monkeypatch.delenv("MP_POLYMARKET_PARTNER_ID", raising=False)
-    _seed_routes()
+    assert _partner_mode("kalshi") == "partner"
 
-    data = client.get(
-        "/api/v1/admin/launch-readiness",
-        headers={"X-MarketPulse-Admin-Token": token},
-    ).json()
-    assert data["partner_monetization"]["modes"]["kalshi"] == "partner"
-    assert data["partner_monetization"]["modes"]["polymarket"] == "organic"
-    assert data["partner_monetization"]["active_partner_venues"] == ["kalshi"]
+    monkeypatch.delenv("MP_KALSHI_PARTNER_ID", raising=False)
+    assert _partner_mode("kalshi") == "organic"
+
+    monkeypatch.setenv("MP_KALSHI_PARTNER_ID", "partner-123")
+    monkeypatch.setenv("MP_KALSHI_COMMERCIAL_VERIFIED", "false")
+    assert _partner_mode("kalshi") == "organic"
