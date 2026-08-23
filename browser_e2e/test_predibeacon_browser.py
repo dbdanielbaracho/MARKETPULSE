@@ -36,7 +36,7 @@ def _server():
             "MP_CONTENT_CANDIDATES": "false",
             "MP_CONTENT_DRAFTS": "false",
             "MP_DATABASE_PATH": str(ROOT / ".browser-test.db"),
-            "MP_PUBLIC_BASE_URL": f"https://predibeacon.com",
+            "MP_PUBLIC_BASE_URL": "https://predibeacon.com",
         }
     )
     proc = subprocess.Popen(
@@ -175,6 +175,13 @@ def _new_page(browser, base_url: str, state="normal", viewport=None):
     return context, page, errors, seen
 
 
+def _set_hidden_select(page: Page, selector: str, value: str):
+    page.locator(selector).evaluate(
+        "(el, value) => { el.value = value; el.dispatchEvent(new Event('change', {bubbles:true})); }",
+        value,
+    )
+
+
 def test_venue_hub_clicks_are_real_navigation_and_real_filters(base_url):
     with sync_playwright() as p:
         browser = p.chromium.launch()
@@ -219,7 +226,7 @@ def test_every_platform_sort_category_combination_emits_correct_query(base_url):
             from urllib.parse import parse_qs, urlsplit
 
             for platform in platforms:
-                page.locator("#venue").select_option(platform)
+                _set_hidden_select(page, "#venue", platform)
                 for sort in sorts:
                     page.locator("#sort").select_option(sort)
                     for category in categories:
