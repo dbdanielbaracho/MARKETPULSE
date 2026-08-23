@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from urllib.parse import quote
+
 from fastapi import FastAPI, Request
 from fastapi.responses import Response
 
@@ -31,6 +33,15 @@ def _eligible(path: str) -> bool:
     )
 
 
+def _preserve_selector_query(localized: str, request: Request) -> str:
+    if not request.url.query or 'class="pb-lang"' not in localized:
+        return localized
+    safe = "/?=&%:-"
+    plain_next = quote(request.url.path, safe=safe)
+    full_next = quote(f"{request.url.path}?{request.url.query}", safe=safe)
+    return localized.replace(f"&next={plain_next}\"", f"&next={full_next}\"")
+
+
 def register_public_locale_middleware(app: FastAPI) -> None:
     @app.middleware("http")
     async def public_locale_presentation(request: Request, call_next):
@@ -56,6 +67,7 @@ def register_public_locale_middleware(app: FastAPI) -> None:
         localized = localize_public_html(path, body, locale)
         localized = extend_public_translation(path, localized, locale)
         localized = translate_trust_page(path, localized, locale)
+        localized = _preserve_selector_query(localized, request)
         headers = {key: value for key, value in response.headers.items() if key.lower() != "content-length"}
         headers["Content-Language"] = locale
         vary = headers.get("Vary", "")
