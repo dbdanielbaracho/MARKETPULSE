@@ -115,6 +115,19 @@ def classify_market_category(
     raw: Mapping[str, Any] | None = None,
 ) -> str | None:
     """Return the stable PrediBeacon category used by public filters."""
+    title_text = _normalized_text(title)
+
+    # Strong signals in the public title outrank noisy provider metadata. Some
+    # venue payloads attach sports tags to non-sports events in shared groups.
+    for label, patterns in (
+        ("Politics", _POLITICS_PATTERNS),
+        ("Economy", _ECONOMY_PATTERNS),
+        ("Tech", _TECH_PATTERNS),
+        ("Sports", _SPORTS_PATTERNS),
+    ):
+        if _matches(title_text, patterns):
+            return label
+
     explicit = _provider_label(provider_category)
     if explicit:
         return explicit
@@ -125,7 +138,7 @@ def classify_market_category(
     )):
         return "Sports"
 
-    text = " ".join(part for part in (_normalized_text(title), _metadata_text(raw)) if part)
+    text = " ".join(part for part in (title_text, _metadata_text(raw)) if part)
     for label, patterns in (
         ("Politics", _POLITICS_PATTERNS),
         ("Economy", _ECONOMY_PATTERNS),
