@@ -31,6 +31,29 @@ def test_polymarket_normalizes_string_prices():
     assert market.yes_probability == 0.67
 
 
+def test_polymarket_uses_parent_event_slug_for_destination():
+    market = PolymarketAdapter.normalize({
+        "id": "3595811",
+        "question": "Will Elon Musk post 240-259 tweets?",
+        "slug": "elon-musk-of-tweets-august-18-august-25-240-259",
+        "events": [{
+            "slug": "elon-musk-of-tweets-august-18-august-25",
+        }],
+    })
+    assert str(market.source_url) == (
+        "https://polymarket.com/event/elon-musk-of-tweets-august-18-august-25"
+    )
+
+
+def test_polymarket_falls_back_to_market_slug_without_parent_event():
+    market = PolymarketAdapter.normalize({
+        "id": "42",
+        "question": "Standalone market",
+        "slug": "standalone-market",
+    })
+    assert str(market.source_url) == "https://polymarket.com/event/standalone-market"
+
+
 def test_polymarket_bad_prices_fail_soft():
     market = PolymarketAdapter.normalize({
         "id": "43",
