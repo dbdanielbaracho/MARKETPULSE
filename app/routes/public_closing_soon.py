@@ -4,7 +4,8 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Query
 
-from app.main import DiscoveryMarket, _DISCOVERY
+from app import main as main_app
+from app.main import DiscoveryMarket
 
 router = APIRouter()
 
@@ -17,12 +18,13 @@ def closing_soon_markets(
     """Return open markets with known deadlines, nearest close first.
 
     Unknown/closed deadlines are excluded so the UI never implies urgency where
-    we do not have evidence for it.
+    we do not have evidence for it. The discovery list is read dynamically so
+    ingestion refreshes are reflected immediately.
     """
     now = datetime.now(timezone.utc)
     items = [
         item
-        for item in _DISCOVERY
+        for item in main_app._DISCOVERY
         if item.closes_at is not None and item.closes_at > now
     ]
     if venue in {"kalshi", "polymarket"}:
