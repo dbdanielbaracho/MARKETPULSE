@@ -2,6 +2,9 @@ from __future__ import annotations
 
 
 _HOME_STYLE = r'''<style id="predibeacon-home-platform-visibility-style">
+/* The per-card answer is the primary cross-platform experience. The old generic
+   comparison block duplicated that answer and forced users to reconcile two areas. */
+.compare-panel{display:none!important}
 .platform-availability{margin-top:.8rem;border:1px solid var(--line);border-radius:12px;padding:.75rem .85rem;background:rgba(0,0,0,.12);font-size:.84rem;line-height:1.45}.platform-availability strong{display:block;color:var(--text);margin-bottom:.2rem}.platform-availability .muted{color:var(--muted)}.platform-availability .verified-other{color:var(--accent);font-weight:850}.platform-availability .candidate-other{color:#fbbf24;font-weight:800}.platform-availability .single-venue{color:var(--muted);font-weight:750}
 </style>'''
 
@@ -13,6 +16,11 @@ _HOME_SCRIPT = r'''<script id="predibeacon-home-platform-visibility-script">
   const otherVenue=venue=>venue==='kalshi'?'Polymarket':'Kalshi';
   const venueLabel=venue=>venue==='kalshi'?'Kalshi':'Polymarket';
   const probability=v=>v==null?'':` · ${Math.round(Number(v)*100)}% there`;
+
+  const discoveryHeading=document.querySelector('#markets .section-title h2');
+  if(discoveryHeading)discoveryHeading.textContent='Markets worth watching now';
+  const gapHeading=document.querySelector('#disagreements h3');
+  if(gapHeading)gapHeading.textContent='Where Kalshi and Polymarket disagree most';
 
   function ensurePanel(card,id,venue){
     let panel=card.querySelector('.platform-availability');
@@ -95,7 +103,7 @@ _HOME_SCRIPT = r'''<script id="predibeacon-home-platform-visibility-script">
 
 
 def enhance_home_template(html: str) -> str:
-    """Add per-card cross-platform availability without changing the base template."""
+    """Make discovery answer venue availability directly on each market card."""
     if 'id="predibeacon-home-platform-visibility-script"' in html:
         return html
     enhanced = html
