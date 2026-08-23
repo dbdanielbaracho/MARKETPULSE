@@ -105,9 +105,9 @@ def test_home_exposes_explicit_accessible_names_and_touch_targets():
         "Find a market",
         "Sort markets",
         "Filter by platform",
-        "First market to compare",
-        "Equivalent market on the other platform",
     ):
         assert f'aria-label="{label}"' in response.text
     assert "min-height:44px" in response.text
     assert 'aria-atomic="true"' in response.text
+    assert "View PrediBeacon analysis" in response.text
+    assert "Cross-platform comparisons" in response.text

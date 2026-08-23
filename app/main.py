@@ -41,7 +41,7 @@ from app.storage.maintenance import BackupResult, DatabaseMaintenance
 from app.storage.revenue import RevenueStore
 from app.storage.snapshots import SnapshotStore
 
-APP_VERSION = "0.45.0"
+APP_VERSION = "0.50.0"
 
 
 class DiscoveryMarket(BaseModel):
@@ -1226,16 +1226,36 @@ def markets(
     else:
         key = lambda item: item.trend_score
     ranked = sorted(items, key=key, reverse=True)
-    balanced: list[DiscoveryMarket] = []
-    for _, tied_group in groupby(ranked, key=key):
-        buckets = {"kalshi": [], "polymarket": []}
-        for item in tied_group:
-            buckets[item.venue].append(item)
+
+    # Suppress exact duplicate contracts before presentation.
+    deduplicated: list[DiscoveryMarket] = []
+    seen: set[tuple[str, str]] = set()
+    for item in ranked:
+        identity = (" ".join(item.title.casefold().split()), item.closes_at.isoformat() if item.closes_at else "")
+        if identity in seen:
+            continue
+        seen.add(identity)
+        deduplicated.append(item)
+
+    # When both venues are requested, interleave their independently ranked
+    # results so one provider cannot visually monopolize discovery.
+    if venue is None:
+        buckets = {
+            "kalshi": [item for item in deduplicated if item.venue == "kalshi"],
+            "polymarket": [item for item in deduplicated if item.venue == "polymarket"],
+        }
+        balanced: list[DiscoveryMarket] = []
+        first = deduplicated[0].venue if deduplicated else "polymarket"
+        order = (first, "kalshi" if first == "polymarket" else "polymarket")
         while buckets["kalshi"] or buckets["polymarket"]:
-            for venue in ("kalshi", "polymarket"):
-                if buckets[venue]:
-                    balanced.append(buckets[venue].pop(0))
-    return balanced[:limit]
+            for provider in order:
+                if buckets[provider]:
+                    balanced.append(buckets[provider].pop(0))
+                    if len(balanced) >= limit:
+                        return balanced
+        return balanced
+
+    return deduplicated[:limit]
 
 
 @app.get("/api/v1/commercial/markets", response_model=list[DiscoveryMarket])

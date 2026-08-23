@@ -54,6 +54,19 @@ def test_equal_scores_are_balanced_across_venues():
     assert [item["venue"] for item in data] == ["kalshi", "polymarket", "kalshi", "polymarket"]
 
 
+def test_different_scores_still_balance_both_venues():
+    now = datetime(2026, 8, 22, tzinfo=timezone.utc)
+    set_discovery_markets([
+        DiscoveryMarket(canonical_id=f"polymarket:high-{index}", title=f"Poly {index}", venue="polymarket", trend_score=100-index, observed_at=now)
+        for index in range(5)
+    ] + [
+        DiscoveryMarket(canonical_id=f"kalshi:lower-{index}", title=f"Kalshi {index}", venue="kalshi", trend_score=50-index, observed_at=now)
+        for index in range(2)
+    ])
+    data = client.get("/api/v1/markets?sort=trending&limit=4").json()
+    assert [item["venue"] for item in data] == ["polymarket", "kalshi", "polymarket", "kalshi"]
+
+
 def test_venue_filter_returns_requested_platform_only():
     seed()
     data = client.get("/api/v1/markets?venue=kalshi").json()
