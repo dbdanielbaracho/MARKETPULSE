@@ -46,6 +46,13 @@ def _enabled(name: str) -> bool:
     return os.getenv(name, "").strip().casefold() in {"1", "true", "yes", "on"}
 
 
+def _provider_configuration_present(channel: SocialChannel) -> bool:
+    primary = bool(os.getenv(_CREDENTIAL_ENV[channel], "").strip())
+    if channel == "telegram":
+        return primary and bool(os.getenv("MP_TELEGRAM_CHAT_ID", "").strip())
+    return primary
+
+
 def channel_readiness(
     channel: SocialChannel,
     *,
@@ -58,7 +65,7 @@ def channel_readiness(
         raise ValueError("unsupported social channel")
     policy = resolve_country_policy(country)
     flags = RuntimeFlags.from_env()
-    credential = bool(os.getenv(_CREDENTIAL_ENV[channel], "").strip())
+    credential = _provider_configuration_present(channel)
     authorized = _enabled(_AUTHORIZATION_ENV[channel])
     reasons: list[str] = []
     if not flags.social_distribution:
