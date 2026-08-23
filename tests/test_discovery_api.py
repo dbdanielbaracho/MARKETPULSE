@@ -73,7 +73,7 @@ def test_near_relevance_scores_receive_soft_provider_balance():
         DiscoveryMarket(canonical_id=f"polymarket:near-{index}", title=f"Poly near {index}", venue="polymarket", trend_score=100-index, observed_at=now)
         for index in range(5)
     ] + [
-        DiscoveryMarket(canonical_id="kalshi:near", title="Kalshi near", venue="kalshi", trend_score=82, observed_at=now)
+        DiscoveryMarket(canonical_id="kalshi:near", title="Kalshi near", venue="kalshi", trend_score=92, observed_at=now)
     ])
     data = client.get("/api/v1/markets?sort=trending&limit=4").json()
     assert [item["venue"] for item in data] == ["polymarket", "polymarket", "polymarket", "kalshi"]
