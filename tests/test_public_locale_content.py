@@ -31,6 +31,21 @@ def test_creator_shell_translates_dynamic_ui_strings_but_not_market_titles():
     assert market_title in pt
 
 
+def test_creator_specific_states_are_not_corrupted_by_shorter_labels():
+    source = "Creator markets are temporarily unavailable. 2 selected markets 1 selected market"
+    pt = translate_content_shell('/creator/alice', source, 'pt-BR')
+    assert pt == 'Os mercados do creator estão temporariamente indisponíveis. 2 mercados selecionados 1 mercado selecionado'
+    assert 'Creator' not in pt
+    assert 'mercado selecionados' not in pt
+
+
+def test_creator_spanish_plural_and_error_state_remain_grammatical():
+    source = "Creator markets are temporarily unavailable. 2 selected markets 1 selected market"
+    es = translate_content_shell('/creator/alice', source, 'es')
+    assert es == 'Los mercados del creator no están disponibles temporalmente. 2 mercados seleccionados 1 mercado seleccionado'
+    assert 'mercado seleccionados' not in es
+
+
 def test_english_is_canonical_and_unchanged():
     source = '<html><body>Editorial intelligence, with evidence. Creator markets Explore market</body></html>'
     assert translate_content_shell('/articles', source, 'en') == source
