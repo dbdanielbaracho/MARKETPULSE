@@ -59,8 +59,8 @@ def execution_quality(
     score = 0
 
     if two_sided:
-        midpoint = (best_bid + best_ask) / 2
-        spread_points = (best_ask - best_bid) * 100
+        midpoint = round((best_bid + best_ask) / 2, 8)
+        spread_points = round((best_ask - best_bid) * 100, 6)
         score += 45
         reasons.append("two-sided order book")
         if spread_points <= 1:
@@ -99,8 +99,8 @@ def execution_quality(
     score = min(100, score)
     grade = "excellent" if score >= 85 else "good" if score >= 70 else "limited" if score >= 45 else "weak"
     return ExecutionQuality(
-        best_bid=best_bid,
-        best_ask=best_ask,
+        best_bid=None if best_bid is None else round(best_bid, 8),
+        best_ask=None if best_ask is None else round(best_ask, 8),
         midpoint=midpoint,
         spread_points=spread_points,
         bid_depth_units=round(bid_depth, 4),
@@ -137,7 +137,7 @@ def kalshi_levels(payload: dict) -> tuple[list[BookLevel], list[BookLevel]]:
             continue
         if no_price > 1:
             no_price /= 100
-        asks.append(BookLevel(price=1 - no_price, size=size))
+        asks.append(BookLevel(price=round(1 - no_price, 8), size=size))
     return bids, asks
 
 
