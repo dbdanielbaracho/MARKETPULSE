@@ -7,6 +7,7 @@ from typing import Any
 import httpx
 
 from app.domain.markets import NormalizedMarket
+from app.services.categories import classify_market_category
 
 
 class PolymarketAdapter:
@@ -50,11 +51,12 @@ class PolymarketAdapter:
         closes_at = datetime.fromisoformat(end_date.replace("Z", "+00:00")) if isinstance(end_date, str) and end_date else None
         market_id = str(item.get("id") or item.get("conditionId") or item.get("slug") or "")
         slug = item.get("slug")
+        title = str(item.get("question") or item.get("title") or market_id)
         return NormalizedMarket(
             venue="polymarket",
             venue_market_id=market_id,
-            title=str(item.get("question") or item.get("title") or market_id),
-            category=item.get("category"),
+            title=title,
+            category=classify_market_category(title=title, provider_category=item.get("category"), raw=item),
             yes_probability=probability,
             volume_usd=float(item["volumeNum"]) if isinstance(item.get("volumeNum"), (int, float)) else None,
             closes_at=closes_at,
