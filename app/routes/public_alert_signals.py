@@ -48,6 +48,19 @@ class CrossPlatformAlertView(BaseModel):
     counterpart_id: str | None = None
 
 
+class ClosingAlertView(BaseModel):
+    available: bool
+    closes_at: datetime | None = None
+    remaining_hours: float | None = None
+
+
+class EvidenceAlertView(BaseModel):
+    available: bool
+    item_count: int
+    latest_evidence_key: str | None = None
+    latest_evidence_at: datetime | None = None
+
+
 class MarketAlertSnapshot(BaseModel):
     market_id: str
     generated_at: datetime
@@ -57,6 +70,8 @@ class MarketAlertSnapshot(BaseModel):
     execution: ExecutionAlertView
     large_trade_activity: LargeTradeAlertView
     cross_platform: CrossPlatformAlertView
+    closing: ClosingAlertView
+    evidence: EvidenceAlertView
     disclaimer: str
 
 
@@ -112,10 +127,30 @@ async def market_alert_signals(
         latest_signal = max(activity.signals, key=lambda signal: signal.occurred_at)
         latest_key = f"{latest_signal.occurred_at.isoformat()}:{latest_signal.notional_usd:.4f}"
 
+    now = datetime.now(timezone.utc)
+    closing_available = bool(market.closes_at and market.closes_at > now)
+    remaining_hours = (
+        max(0.0, (market.closes_at - now).total_seconds() / 3600)
+        if closing_available and market.closes_at
+        else None
+    )
+
+    evidence_bundle = core._evidence_bundle(market)
+    latest_evidence = max(
+        evidence_bundle.items,
+        key=lambda item: item.published_at or item.retrieved_at,
+        default=None,
+    )
+    latest_evidence_at = (
+        latest_evidence.published_at or latest_evidence.retrieved_at
+        if latest_evidence is not None
+        else None
+    )
+
     verified = bool(cross and cross.verification and cross.verification.equivalent_contracts)
     return MarketAlertSnapshot(
         market_id=market_id,
-        generated_at=datetime.now(timezone.utc),
+        generated_at=now,
         probability=market.probability,
         probability_change=market.probability_change,
         breaking=BreakingAlertView(
@@ -144,6 +179,17 @@ async def market_alert_signals(
             confidence=cross.verification.confidence if cross and cross.verification else None,
             gap_points=cross.verification.gap_points if verified and cross and cross.verification else None,
             counterpart_id=cross.counterpart.canonical_id if cross and cross.counterpart else None,
+        ),
+        closing=ClosingAlertView(
+            available=closing_available,
+            closes_at=market.closes_at if closing_available else None,
+            remaining_hours=remaining_hours,
+        ),
+        evidence=EvidenceAlertView(
+            available=latest_evidence is not None,
+            item_count=len(evidence_bundle.items),
+            latest_evidence_key=latest_evidence.evidence_id if latest_evidence is not None else None,
+            latest_evidence_at=latest_evidence_at,
         ),
         disclaimer=(
             "Alert signals report observable market conditions only. Missing data never triggers a signal, and no alert "

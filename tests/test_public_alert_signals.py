@@ -27,6 +27,8 @@ def _seed(tmp_path, monkeypatch) -> tuple[str, datetime]:
             probability_change=.06,
             trend_score=80,
             observed_at=now,
+            closes_at=now + timedelta(hours=23),
+            source_url="https://kalshi.com/markets/KXALERT",
         )
     ])
     store = SnapshotStore(database)
@@ -71,6 +73,13 @@ def test_alert_snapshot_aggregates_only_observable_signals(tmp_path, monkeypatch
     assert payload["cross_platform"]["equivalent_contracts"] is True
     assert payload["cross_platform"]["gap_points"] == 6.5
     assert payload["cross_platform"]["counterpart_id"] == "polymarket:42"
+    assert payload["closing"]["available"] is True
+    assert 22 <= payload["closing"]["remaining_hours"] <= 23
+    assert payload["closing"]["closes_at"] is not None
+    assert payload["evidence"]["available"] is True
+    assert payload["evidence"]["item_count"] >= 1
+    assert payload["evidence"]["latest_evidence_key"].startswith("ev_")
+    assert payload["evidence"]["latest_evidence_at"] is not None
     assert "Missing data never triggers a signal" in payload["disclaimer"]
     assert response.headers["cache-control"] == "private, max-age=10"
 
@@ -93,6 +102,42 @@ def test_alert_snapshot_fails_closed_when_optional_live_layers_are_unavailable(t
     assert payload["large_trade_activity"]["signal_count"] == 0
     assert payload["cross_platform"]["available"] is False
     assert payload["cross_platform"]["equivalent_contracts"] is False
+    assert payload["closing"]["available"] is True
+    assert payload["evidence"]["available"] is True
+
+
+def test_alert_snapshot_fails_closed_without_closing_or_evidence(tmp_path, monkeypatch):
+    database = tmp_path / "alerts-empty.db"
+    monkeypatch.setenv("MP_DATABASE_PATH", str(database))
+    now = datetime.now(timezone.utc)
+    market_id = "polymarket:no-context"
+    core.set_discovery_markets([
+        core.DiscoveryMarket(
+            canonical_id=market_id,
+            title="Context unavailable?",
+            venue="polymarket",
+            probability=.5,
+            trend_score=50,
+            observed_at=now,
+        )
+    ])
+
+    async def unavailable(_):
+        return None
+
+    monkeypatch.setattr(alert_routes, "_safe_execution", unavailable)
+    monkeypatch.setattr(alert_routes, "_safe_trade_activity", unavailable)
+    monkeypatch.setattr(alert_routes, "_safe_cross_platform", unavailable)
+    response = client.get("/api/v1/market/alert-signals", params={"market_id": market_id})
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["closing"] == {"available": False, "closes_at": None, "remaining_hours": None}
+    assert payload["evidence"] == {
+        "available": False,
+        "item_count": 0,
+        "latest_evidence_key": None,
+        "latest_evidence_at": None,
+    }
 
 
 def test_alert_signal_endpoint_is_registered():
