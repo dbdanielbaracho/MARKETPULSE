@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from urllib.parse import quote
+
 from fastapi import FastAPI, Request
 from fastapi.responses import Response
 
 from app.services.public_locale import DEFAULT_LOCALE, localize_public_html, normalize_locale
 from app.services.public_locale_extended import extend_public_translation
+from app.services.public_locale_trust import translate_trust_page
 
 
 PUBLIC_LOCALE_PATHS = {
@@ -28,6 +31,15 @@ def _eligible(path: str) -> bool:
         or path.startswith("/articles/")
         or path.startswith("/creator/")
     )
+
+
+def _preserve_selector_query(localized: str, request: Request) -> str:
+    if not request.url.query or 'class="pb-lang"' not in localized:
+        return localized
+    safe = "/?=&%:-"
+    plain_next = quote(request.url.path, safe=safe)
+    full_next = quote(f"{request.url.path}?{request.url.query}", safe=safe)
+    return localized.replace(f"&next={plain_next}\"", f"&next={full_next}\"")
 
 
 def register_public_locale_middleware(app: FastAPI) -> None:
@@ -54,6 +66,8 @@ def register_public_locale_middleware(app: FastAPI) -> None:
         locale = normalize_locale(request.cookies.get("predibeacon_lang") or DEFAULT_LOCALE)
         localized = localize_public_html(path, body, locale)
         localized = extend_public_translation(path, localized, locale)
+        localized = translate_trust_page(path, localized, locale)
+        localized = _preserve_selector_query(localized, request)
         headers = {key: value for key, value in response.headers.items() if key.lower() != "content-length"}
         headers["Content-Language"] = locale
         vary = headers.get("Vary", "")
