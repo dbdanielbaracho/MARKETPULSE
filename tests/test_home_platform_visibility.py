@@ -6,10 +6,10 @@ def test_home_enhancer_adds_visible_cross_platform_status():
     enhanced = enhance_home_template(source)
 
     assert 'platform-availability' in enhanced
-    assert 'Available on ${venueLabel(venue)}' in enhanced
-    assert 'No verified equivalent found on ${other}' in enhanced
-    assert 'Similar market found on ${venueLabel(counterpart.venue)}, but it is not verified as the same contract.' in enhanced
-    assert 'verified equivalent' in enhanced
+    assert 'Disponível na ${venueLabel(venue)}' in enhanced
+    assert 'Nenhum equivalente verificado encontrado na ${other}.' in enhanced
+    assert 'Mercado semelhante encontrado na ${venueLabel(counterpart.venue)}, mas não foi verificado como o mesmo contrato.' in enhanced
+    assert 'equivalente verificado' in enhanced
     assert '/api/v1/market/cross-platform?' in enhanced
     assert "candidate_limit:'3'" in enhanced
 
@@ -19,20 +19,20 @@ def test_home_enhancer_prioritizes_cards_over_duplicate_comparison_panel():
     enhanced = enhance_home_template(source)
 
     assert '.compare-panel{display:none!important}' in enhanced
-    assert "Markets worth watching now" in enhanced
-    assert "Where Kalshi and Polymarket disagree most" in enhanced
+    assert 'Mercados que merecem atenção agora' in enhanced
+    assert 'Onde Kalshi e Polymarket mais discordam' in enhanced
 
 
 def test_home_enhancer_explains_ranking_and_renames_sort_choices():
     source = '<html><head></head><body><section id="markets"><div class="controls"><label><span class="eyebrow">SORT</span><select id="sort"><option value="trending">Most relevant</option><option value="movers">Biggest movers</option><option value="volume">Most volume</option></select></label><label><span class="eyebrow">PLATFORM</span><select id="venue"></select></label></div><div class="section-title"><h2>Most relevant markets now</h2></div><div id="grid"></div></section></body></html>'
     enhanced = enhance_home_template(source)
 
-    assert 'Why this order?' in enhanced
-    assert 'PrediBeacon relevance' in enhanced
-    assert 'Biggest probability moves' in enhanced
-    assert 'Highest reported volume' in enhanced
-    assert "venueFilter.textContent='VENUE'" in enhanced
-    assert 'observed movement, reported activity, closing urgency, freshness and data completeness' in enhanced
+    assert 'Por que esta ordem?' in enhanced
+    assert 'Relevância PrediBeacon' in enhanced
+    assert 'Maiores movimentos de probabilidade' in enhanced
+    assert 'Maior volume informado' in enhanced
+    assert "venueFilter.textContent='PLATAFORMA'" in enhanced
+    assert 'movimento observado, atividade informada, proximidade do fechamento, atualização e qualidade dos dados' in enhanced
 
 
 def test_home_enhancer_uses_resumos_instead_of_ambiguous_briefs_label():
