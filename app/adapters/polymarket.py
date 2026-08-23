@@ -11,9 +11,15 @@ from app.services.categories import classify_market_category
 
 
 class PolymarketAdapter:
-    def __init__(self, base_url: str, timeout_seconds: float = 10.0) -> None:
+    def __init__(
+        self,
+        base_url: str,
+        timeout_seconds: float = 10.0,
+        clob_base_url: str = "https://clob.polymarket.com",
+    ) -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout_seconds = timeout_seconds
+        self.clob_base_url = clob_base_url.rstrip("/")
 
     async def fetch_markets(self, limit: int = 100, after: str | None = None) -> list[NormalizedMarket]:
         params: dict[str, Any] = {
@@ -31,6 +37,42 @@ class PolymarketAdapter:
         payload = response.json()
         items = payload if isinstance(payload, list) else payload.get("data", [])
         return [self.normalize(item) for item in items]
+
+    async def fetch_orderbook(self, token_id: str) -> dict[str, Any]:
+        """Fetch the public CLOB order book for one outcome token."""
+        if not token_id or len(token_id) > 300:
+            raise ValueError("invalid Polymarket token id")
+        async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+            response = await client.get(
+                f"{self.clob_base_url}/book",
+                params={"token_id": token_id},
+            )
+            response.raise_for_status()
+        payload = response.json()
+        return payload if isinstance(payload, dict) else {}
+
+    @staticmethod
+    def yes_token_id(item: dict[str, Any]) -> str | None:
+        """Return the YES token id from a Gamma market when exposed."""
+        tokens = item.get("clobTokenIds") or item.get("clob_token_ids")
+        if isinstance(tokens, str):
+            try:
+                tokens = json.loads(tokens)
+            except json.JSONDecodeError:
+                return None
+        outcomes = item.get("outcomes")
+        if isinstance(outcomes, str):
+            try:
+                outcomes = json.loads(outcomes)
+            except json.JSONDecodeError:
+                outcomes = None
+        if isinstance(tokens, list) and tokens:
+            if isinstance(outcomes, list) and len(outcomes) == len(tokens):
+                for index, outcome in enumerate(outcomes):
+                    if str(outcome).strip().casefold() == "yes":
+                        return str(tokens[index])
+            return str(tokens[0])
+        return None
 
     @staticmethod
     def normalize(item: dict[str, Any]) -> NormalizedMarket:
