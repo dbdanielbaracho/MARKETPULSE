@@ -25,6 +25,12 @@ def test_venue_context_fetches_real_platform_rankings():
     assert 'Fecha primeiro' in enhanced
 
 
+def test_venue_context_initializes_from_direct_platform_url():
+    enhanced = enhance_home_venue_context('<html><head></head><body><section id="markets"></section></body></html>')
+    assert "const initial=new URLSearchParams(location.search).get('venue')" in enhanced
+    assert "if(initial==='kalshi'||initial==='polymarket')loadVenue(initial)" in enhanced
+
+
 def test_venue_context_has_honest_failure_state():
     enhanced = enhance_home_venue_context('<html><head></head><body><section id="markets"></section></body></html>')
 
