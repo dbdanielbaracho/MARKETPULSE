@@ -42,3 +42,4 @@ jobs:
         run: |
           pytest -q browser_e2e/test_production_smoke.py
           pytest -q browser_e2e/test_production_mobile.py
+          pytest -q browser_e2e/test_production_outbound.py
