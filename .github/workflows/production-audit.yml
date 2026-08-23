@@ -3,6 +3,7 @@ name: Production quality gate
 on:
   push:
     branches: [main]
+  pull_request:
   schedule:
     - cron: "17 */6 * * *"
   workflow_dispatch:
@@ -37,7 +38,11 @@ jobs:
               raise SystemExit("APP_VERSION not found")
           print(f"version={match.group(1)}")
           PY
-      - name: Audit deployed production
+      - name: Audit current production from pull request
+        if: github.event_name == 'pull_request'
+        run: python -m scripts.production_audit --market-limit 10
+      - name: Audit deployed release
+        if: github.event_name != 'pull_request'
         run: >-
           python -m scripts.production_audit
           --expected-version "${{ steps.release.outputs.version }}"
