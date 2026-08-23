@@ -3,14 +3,30 @@ from __future__ import annotations
 from fastapi import FastAPI, Request
 from fastapi.responses import Response
 
-from app.services.public_locale import localize_public_html
+from app.services.public_locale import DEFAULT_LOCALE, localize_public_html, normalize_locale
 
 
-PUBLIC_LOCALE_PATHS = {"/alerts", "/market"}
-LEGACY_SMOKE_MARKERS = {
-    "/alerts": "<!-- legacy-smoke: Market alerts -->",
-    "/market": "<!-- legacy-smoke: Create alert | Copy embed code | Market timeline -->",
+PUBLIC_LOCALE_PATHS = {
+    "/",
+    "/top",
+    "/watchlist",
+    "/alerts",
+    "/articles",
+    "/methodology",
+    "/risk",
+    "/privacy",
+    "/terms",
+    "/market",
 }
+
+
+def _eligible(path: str) -> bool:
+    return (
+        path in PUBLIC_LOCALE_PATHS
+        or path.startswith("/markets/")
+        or path.startswith("/articles/")
+        or path.startswith("/creator/")
+    )
 
 
 def register_public_locale_middleware(app: FastAPI) -> None:
@@ -19,8 +35,7 @@ def register_public_locale_middleware(app: FastAPI) -> None:
         response = await call_next(request)
         path = request.url.path
         content_type = response.headers.get("content-type", "")
-        eligible = path in PUBLIC_LOCALE_PATHS or path.startswith("/markets/")
-        if not eligible or response.status_code != 200 or "text/html" not in content_type:
+        if not _eligible(path) or response.status_code != 200 or "text/html" not in content_type:
             return response
 
         chunks = [chunk async for chunk in response.body_iterator]
@@ -35,12 +50,14 @@ def register_public_locale_middleware(app: FastAPI) -> None:
                 media_type=response.media_type,
             )
 
-        localized = localize_public_html(path, body)
-        marker_path = "/market" if path.startswith("/markets/") else path
-        marker = LEGACY_SMOKE_MARKERS.get(marker_path, "")
-        if marker and "</body>" in localized:
-            localized = localized.replace("</body>", marker + "</body>", 1)
+        locale = normalize_locale(request.cookies.get("predibeacon_lang") or DEFAULT_LOCALE)
+        localized = localize_public_html(path, body, locale)
         headers = {key: value for key, value in response.headers.items() if key.lower() != "content-length"}
+        headers["Content-Language"] = locale
+        vary = headers.get("Vary", "")
+        vary_values = {item.strip() for item in vary.split(",") if item.strip()}
+        vary_values.add("Cookie")
+        headers["Vary"] = ", ".join(sorted(vary_values))
         return Response(
             content=localized,
             status_code=response.status_code,
