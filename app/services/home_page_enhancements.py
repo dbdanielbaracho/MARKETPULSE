@@ -5,6 +5,7 @@ _HOME_STYLE = r'''<style id="predibeacon-home-platform-visibility-style">
 /* The per-card answer is the primary cross-platform experience. The old generic
    comparison block duplicated that answer and forced users to reconcile two areas. */
 .compare-panel{display:none!important}
+.discovery-explainer{margin:.7rem 0 1.25rem;padding:.85rem 1rem;border-left:4px solid var(--accent);background:var(--panel);color:var(--muted);line-height:1.55}.discovery-explainer strong{color:var(--text)}
 .platform-availability{margin-top:.8rem;border:1px solid var(--line);border-radius:12px;padding:.75rem .85rem;background:rgba(0,0,0,.12);font-size:.84rem;line-height:1.45}.platform-availability strong{display:block;color:var(--text);margin-bottom:.2rem}.platform-availability .muted{color:var(--muted)}.platform-availability .verified-other{color:var(--accent);font-weight:850}.platform-availability .candidate-other{color:#fbbf24;font-weight:800}.platform-availability .single-venue{color:var(--muted);font-weight:750}
 </style>'''
 
@@ -21,6 +22,21 @@ _HOME_SCRIPT = r'''<script id="predibeacon-home-platform-visibility-script">
   if(discoveryHeading)discoveryHeading.textContent='Markets worth watching now';
   const gapHeading=document.querySelector('#disagreements h3');
   if(gapHeading)gapHeading.textContent='Where Kalshi and Polymarket disagree most';
+
+  const sort=document.querySelector('#sort');
+  if(sort){
+    const labels={trending:'PrediBeacon relevance',movers:'Biggest probability moves',volume:'Highest reported volume'};
+    for(const option of sort.options){if(labels[option.value])option.textContent=labels[option.value]}
+  }
+  const venueFilter=document.querySelector('label:has(#venue) .eyebrow');
+  if(venueFilter)venueFilter.textContent='VENUE';
+
+  if(discoveryHeading&&!document.querySelector('.discovery-explainer')){
+    const explainer=document.createElement('p');
+    explainer.className='discovery-explainer';
+    explainer.innerHTML='<strong>Why this order?</strong> PrediBeacon relevance combines observed movement, reported activity, closing urgency, freshness and data completeness. Each card also tells you whether the same contract is verified on the other venue.';
+    discoveryHeading.closest('.section-title')?.insertAdjacentElement('afterend',explainer);
+  }
 
   function ensurePanel(card,id,venue){
     let panel=card.querySelector('.platform-availability');
@@ -103,7 +119,7 @@ _HOME_SCRIPT = r'''<script id="predibeacon-home-platform-visibility-script">
 
 
 def enhance_home_template(html: str) -> str:
-    """Make discovery answer venue availability directly on each market card."""
+    """Make discovery answer ranking and venue availability directly on the homepage."""
     if 'id="predibeacon-home-platform-visibility-script"' in html:
         return html
     enhanced = html
