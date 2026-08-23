@@ -26,9 +26,10 @@ def test_home_has_accessible_discovery_controls():
     response = client.get("/")
     assert response.status_code == 200
     assert 'href="#main"' in response.text
-    assert 'type="search"' in response.text
+    assert 'type="search"' not in response.text
     assert 'aria-live="polite"' in response.text
-    assert 'data-evidence-id' in response.text
+    assert 'aria-label="Sort markets"' in response.text
+    assert 'aria-label="Filter by platform"' in response.text
 
 
 def test_seo_endpoints_and_canonical_are_consistent():
@@ -102,9 +103,9 @@ def test_non_www_hosts_are_not_redirected():
 def test_home_exposes_explicit_accessible_names_and_touch_targets():
     response = client.get("/")
     for label in (
-        "Find a market",
         "Sort markets",
         "Filter by platform",
+        "Market categories",
     ):
         assert f'aria-label="{label}"' in response.text
     assert "min-height:44px" in response.text
