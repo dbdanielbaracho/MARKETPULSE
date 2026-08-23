@@ -5,7 +5,7 @@ import pytest
 pytest.importorskip("playwright.sync_api")
 from playwright.sync_api import expect, sync_playwright
 
-from browser_e2e.test_predibeacon_browser import _new_page
+from browser_e2e.test_predibeacon_browser import _new_page, base_url
 
 
 def test_home_has_unique_ids_and_named_interactive_controls(base_url):
