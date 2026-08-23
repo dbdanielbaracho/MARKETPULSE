@@ -4,6 +4,7 @@ from app.main import app
 from app.middleware.alerts import register_alerts_middleware
 from app.middleware.home_platform_visibility import register_home_platform_visibility_middleware
 from app.middleware.market_intelligence import register_market_intelligence_middleware
+from app.middleware.public_locale import register_public_locale_middleware
 from app.middleware.relevance_pages import register_relevance_pages_middleware
 from app.routes.commercial_intelligence import router as commercial_intelligence_router
 from app.routes.contract_verification import router as contract_verification_router
@@ -30,4 +31,5 @@ app.include_router(public_venue_conditions_router)
 register_market_intelligence_middleware(app)
 register_alerts_middleware(app)
 register_home_platform_visibility_middleware(app)
+register_public_locale_middleware(app)
 register_relevance_pages_middleware(app)
