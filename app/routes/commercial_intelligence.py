@@ -4,7 +4,7 @@ import os
 from datetime import datetime, timezone
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
 
 import app.main as core
@@ -97,7 +97,11 @@ class LargeTradesResponse(BaseModel):
     disclaimer: str
 
 
-def _principal(principal: ApiPrincipal = Depends(core._commercial_markets_key)) -> ApiPrincipal:
+def _principal(
+    response: Response,
+    principal: ApiPrincipal = Depends(core._commercial_markets_key),
+) -> ApiPrincipal:
+    response.headers["Cache-Control"] = "no-store"
     return principal
 
 
