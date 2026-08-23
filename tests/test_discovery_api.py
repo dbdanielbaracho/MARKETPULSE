@@ -41,7 +41,7 @@ def test_limit_is_bounded():
     assert response.status_code == 422
 
 
-def test_equal_scores_are_balanced_across_venues():
+def test_equal_scores_limit_provider_streak_to_three():
     now = datetime(2026, 8, 22, tzinfo=timezone.utc)
     set_discovery_markets([
         DiscoveryMarket(canonical_id=f"kalshi:{index}", title=f"Kalshi {index}", venue="kalshi", probability=.5, volume_usd=100, trend_score=30, observed_at=now)
@@ -51,10 +51,10 @@ def test_equal_scores_are_balanced_across_venues():
         for index in range(3)
     ])
     data = client.get("/api/v1/markets?sort=trending&limit=4").json()
-    assert [item["venue"] for item in data] == ["kalshi", "polymarket", "kalshi", "polymarket"]
+    assert [item["venue"] for item in data] == ["kalshi", "kalshi", "kalshi", "polymarket"]
 
 
-def test_different_scores_still_balance_both_venues():
+def test_relevance_outranks_forced_provider_balance():
     now = datetime(2026, 8, 22, tzinfo=timezone.utc)
     set_discovery_markets([
         DiscoveryMarket(canonical_id=f"polymarket:high-{index}", title=f"Poly {index}", venue="polymarket", trend_score=100-index, observed_at=now)
@@ -64,7 +64,19 @@ def test_different_scores_still_balance_both_venues():
         for index in range(2)
     ])
     data = client.get("/api/v1/markets?sort=trending&limit=4").json()
-    assert [item["venue"] for item in data] == ["polymarket", "kalshi", "polymarket", "kalshi"]
+    assert [item["venue"] for item in data] == ["polymarket"] * 4
+
+
+def test_near_relevance_scores_receive_soft_provider_balance():
+    now = datetime(2026, 8, 22, tzinfo=timezone.utc)
+    set_discovery_markets([
+        DiscoveryMarket(canonical_id=f"polymarket:near-{index}", title=f"Poly near {index}", venue="polymarket", trend_score=100-index, observed_at=now)
+        for index in range(5)
+    ] + [
+        DiscoveryMarket(canonical_id="kalshi:near", title="Kalshi near", venue="kalshi", trend_score=82, observed_at=now)
+    ])
+    data = client.get("/api/v1/markets?sort=trending&limit=4").json()
+    assert [item["venue"] for item in data] == ["polymarket", "polymarket", "polymarket", "kalshi"]
 
 
 def test_venue_filter_returns_requested_platform_only():
