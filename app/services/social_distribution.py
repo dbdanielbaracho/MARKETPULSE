@@ -50,6 +50,10 @@ def _provider_configuration_present(channel: SocialChannel) -> bool:
     primary = bool(os.getenv(_CREDENTIAL_ENV[channel], "").strip())
     if channel == "telegram":
         return primary and bool(os.getenv("MP_TELEGRAM_CHAT_ID", "").strip())
+    if channel == "instagram":
+        return primary and bool(os.getenv("MP_INSTAGRAM_USER_ID", "").strip()) and bool(os.getenv("MP_META_GRAPH_VERSION", "").strip())
+    if channel == "whatsapp":
+        return primary and bool(os.getenv("MP_WHATSAPP_PHONE_NUMBER_ID", "").strip()) and bool(os.getenv("MP_META_GRAPH_VERSION", "").strip())
     return primary
 
 
