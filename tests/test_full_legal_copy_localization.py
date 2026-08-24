@@ -1,11 +1,15 @@
 from pathlib import Path
 
+from fastapi.testclient import TestClient
+
+from app.entrypoint import app
 from app.services.public_locale import SUPPORTED_LOCALES
 from app.services.public_locale_legal import PAGES, translate_legal_page
 
 
 TEMPLATES = Path(__file__).parents[1] / "app" / "templates"
 NON_ENGLISH = tuple(locale for locale in SUPPORTED_LOCALES if locale != "en")
+client = TestClient(app)
 
 PRIVACY_CANONICAL = (
     "Pre-launch privacy notice",
@@ -73,3 +77,20 @@ def test_english_and_non_legal_pages_are_not_rewritten():
 def test_missing_main_fails_closed_without_partial_legal_translation():
     source = "<html><title>Privacy — PrediBeacon</title><body>broken template</body></html>"
     assert translate_legal_page("/privacy", source, "fr") == source
+
+
+def test_accept_language_reaches_complete_french_legal_copy_through_middleware():
+    response = client.get("/privacy", headers={"Accept-Language": "fr-FR,fr;q=0.9,en;q=0.5"})
+    assert response.status_code == 200
+    assert response.headers["content-language"] == "fr"
+    assert "Avis de confidentialité avant lancement" in response.text
+    assert "PrediBeacon does not currently offer public user accounts" not in response.text
+
+
+def test_arabic_legal_copy_keeps_rtl_document_direction_through_middleware():
+    response = client.get("/terms", headers={"Accept-Language": "ar"})
+    assert response.status_code == 200
+    assert response.headers["content-language"] == "ar"
+    assert '<html lang="ar" dir="rtl">' in response.text
+    assert "شروط الاستخدام المعلوماتي قبل الإطلاق" in response.text
+    assert "These pre-launch terms are not the final commercial terms." not in response.text
