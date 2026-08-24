@@ -8,6 +8,20 @@ def test_market_formatting_replaces_hardcoded_us_locale():
     assert "Intl.NumberFormat('en-US'" not in result
 
 
+def test_home_formatting_replaces_hardcoded_locale_and_relative_time_tokens():
+    source = (
+        "function money(v){return v==null?'Unavailable':new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',notation:'compact'}).format(v)}"
+        "function remaining(v){if(!v)return'Unknown';const ms=new Date(v).getTime()-Date.now();if(ms<=0)return'Closed';const h=Math.floor(ms/3600000);return h<24?h+'h':Math.floor(h/24)+'d'}"
+    )
+    result = localize_market_formatting('/', source)
+    assert "Intl.NumberFormat(document.documentElement.lang||'en'" in result
+    assert "Intl.NumberFormat('en-US'" not in result
+    assert "Intl.RelativeTimeFormat" in result
+    assert "h+'h'" not in result
+    assert "+'d'" not in result
+    assert "currency:'USD'" in result
+
+
 def test_market_formatting_uses_standard_relative_time_api():
     source = "function remaining(v){if(!v)return'Not published';const ms=new Date(v).getTime()-Date.now();if(ms<=0)return'Closed';const h=Math.floor(ms/3600000);if(h<24)return h+'h';return Math.floor(h/24)+'d '+h%24+'h'}function ago(v){const ms=Date.now()-new Date(v).getTime();if(!Number.isFinite(ms)||ms<0)return'Unknown';const m=Math.floor(ms/60000);return m<1?'Just now':m<60?m+'m ago':Math.floor(m/60)+'h ago'}"
     result = localize_market_formatting('/market', source)
