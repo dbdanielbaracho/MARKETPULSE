@@ -4,7 +4,16 @@ on:
   push:
     branches: [main]
     paths:
+      - 'app/**'
+      - 'browser_e2e/**'
+      - 'config/**'
+      - 'tests/**'
+      - 'scripts/**'
       - 'docs/REQUIREMENTS.md'
+      - 'docs/evidence/**'
+      - 'requirements.txt'
+      - 'Dockerfile'
+      - 'railway.toml'
       - '.github/workflows/final-acceptance.yml'
   workflow_dispatch:
 
@@ -122,4 +131,3 @@ jobs:
             -f context="predibeacon/final-acceptance"
           if [[ "${state}" != "success" ]]; then
             exit 1
-          fi
