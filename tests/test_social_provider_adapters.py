@@ -81,7 +81,7 @@ def test_whatsapp_is_template_only_and_returns_provider_message_id(monkeypatch):
 
     result, transport = asyncio.run(run())
     assert result.message_id == "wamid.123"
-    assert whatsapp_configured() is False  # environment mutations are scoped to the async test's monkeypatch lifecycle only after return cleanup
+    assert whatsapp_configured() is True
     request = transport.requests[0]
     assert request.url.path == "/v99.0/98765/messages"
     payload = json.loads(request.content)
