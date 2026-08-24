@@ -10,18 +10,34 @@ _REMAINING_NEW = "function remaining(v){if(!v)return'Not published';const ms=new
 _AGO_OLD = "function ago(v){const ms=Date.now()-new Date(v).getTime();if(!Number.isFinite(ms)||ms<0)return'Unknown';const m=Math.floor(ms/60000);return m<1?'Just now':m<60?m+'m ago':Math.floor(m/60)+'h ago'}"
 _AGO_NEW = "function ago(v){const ms=Date.now()-new Date(v).getTime();if(!Number.isFinite(ms)||ms<0)return'Unknown';const locale=document.documentElement.lang||'en',rtf=new Intl.RelativeTimeFormat(locale,{numeric:'auto'}),m=Math.floor(ms/60000);if(m<1)return rtf.format(0,'minute');if(m<60)return rtf.format(-m,'minute');return rtf.format(-Math.floor(m/60),'hour')}"
 
+_ABSOLUTE_TIME = "function absoluteTime(v){if(!v)return'';const d=new Date(v);if(!Number.isFinite(d.getTime()))return'';const locale=document.documentElement.lang||'en';return new Intl.DateTimeFormat(locale,{year:'numeric',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZoneName:'short'}).format(d)}"
+
+_REMAINING_ASSIGNMENT_OLD = "document.querySelector('#remaining').textContent=remaining(m.closes_at);"
+_REMAINING_ASSIGNMENT_NEW = "const remainingEl=document.querySelector('#remaining');remainingEl.textContent=remaining(m.closes_at);remainingEl.title=absoluteTime(m.closes_at);"
+
+_OBSERVED_ASSIGNMENT_OLD = "document.querySelector('#observed').textContent=ago(m.observed_at);"
+_OBSERVED_ASSIGNMENT_NEW = "const observedEl=document.querySelector('#observed');observedEl.textContent=ago(m.observed_at);observedEl.title=absoluteTime(m.observed_at);"
+
 
 def localize_market_formatting(path: str, html: str) -> str:
     """Use browser-standard Intl formatting for user-visible market numbers/time.
 
-    Venue contract titles remain canonical and untranslated. Only presentation of
-    currency and relative time is localized, using the final document language
-    chosen by PrediBeacon's existing language negotiation/override layer.
+    Venue contract titles remain canonical and untranslated. Presentation of
+    currency, relative time and absolute timestamps is localized using the final
+    document language. Absolute timestamps use the browser's local timezone and
+    expose the timezone abbreviation in a native title tooltip.
     """
     if not (path == "/market" or path.startswith("/markets/")):
         return html
-    return (
+    result = (
         html.replace(_MONEY_OLD, _MONEY_NEW)
         .replace(_REMAINING_OLD, _REMAINING_NEW)
         .replace(_AGO_OLD, _AGO_NEW)
+    )
+    if _ABSOLUTE_TIME not in result and (_REMAINING_ASSIGNMENT_OLD in result or _OBSERVED_ASSIGNMENT_OLD in result):
+        marker = _AGO_NEW if _AGO_NEW in result else _AGO_OLD
+        result = result.replace(marker, marker + _ABSOLUTE_TIME)
+    return (
+        result.replace(_REMAINING_ASSIGNMENT_OLD, _REMAINING_ASSIGNMENT_NEW)
+        .replace(_OBSERVED_ASSIGNMENT_OLD, _OBSERVED_ASSIGNMENT_NEW)
     )
