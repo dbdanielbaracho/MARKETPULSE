@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 
-from app.services.admin_session import issue_session, read_session, verify_credentials, verify_totp
+from app.services.admin_session import admin_config_status, issue_session, read_session, verify_credentials, verify_totp
 
 
 def _configure(monkeypatch):
@@ -47,3 +47,29 @@ def test_legacy_admin_token_can_bootstrap_password(monkeypatch):
     monkeypatch.setenv("MP_ADMIN_TOKEN", "legacy-admin-token-which-is-at-least-32-chars")
     monkeypatch.delenv("MP_ADMIN_TOTP_SECRET", raising=False)
     assert verify_credentials("admin@predibeacon.com", os.environ["MP_ADMIN_TOKEN"])
+
+
+def test_password_only_deployment_can_sign_sessions(monkeypatch):
+    monkeypatch.setenv("MP_ADMIN_EMAIL", "admin@predibeacon.com")
+    monkeypatch.setenv("MP_ADMIN_PASSWORD", "A-secure-password!2026")
+    monkeypatch.delenv("MP_ADMIN_TOKEN", raising=False)
+    monkeypatch.delenv("MP_ADMIN_SESSION_SECRET", raising=False)
+    monkeypatch.delenv("MP_ADMIN_TOTP_SECRET", raising=False)
+
+    assert verify_credentials("admin@predibeacon.com", "A-secure-password!2026")
+    token = issue_session("admin@predibeacon.com", now=1_000)
+    assert read_session(token, now=1_100) is not None
+    status = admin_config_status()
+    assert status["password_configured"] is True
+    assert status["password_valid_length"] is True
+    assert status["session_signing_configured"] is True
+
+
+def test_matching_quotes_around_dashboard_secret_are_tolerated(monkeypatch):
+    monkeypatch.setenv("MP_ADMIN_EMAIL", "admin@predibeacon.com")
+    monkeypatch.setenv("MP_ADMIN_PASSWORD", '"A-secure-password!2026"')
+    monkeypatch.delenv("MP_ADMIN_TOKEN", raising=False)
+    monkeypatch.delenv("MP_ADMIN_SESSION_SECRET", raising=False)
+    monkeypatch.delenv("MP_ADMIN_TOTP_SECRET", raising=False)
+
+    assert verify_credentials("admin@predibeacon.com", "A-secure-password!2026")

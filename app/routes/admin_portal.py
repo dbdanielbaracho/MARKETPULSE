@@ -7,7 +7,15 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 
-from app.services.admin_session import COOKIE_NAME, admin_email, issue_session, read_session, two_factor_enabled, verify_credentials
+from app.services.admin_session import (
+    COOKIE_NAME,
+    admin_config_status,
+    admin_email,
+    issue_session,
+    read_session,
+    two_factor_enabled,
+    verify_credentials,
+)
 
 router = APIRouter()
 
@@ -62,10 +70,16 @@ def admin_insights_page() -> HTMLResponse:
 @router.get("/api/v1/admin/session")
 def admin_session_status(request: Request) -> dict[str, object]:
     session = read_session(request.cookies.get(COOKIE_NAME))
+    config = admin_config_status()
     return {
         "authenticated": bool(session),
-        "email": session.get("email") if session else None,
-        "two_factor_enabled": two_factor_enabled(),
+        "email": session.get("email") if session else config["configured_email"],
+        "two_factor_enabled": config["two_factor_enabled"],
+        "configuration": {
+            "password_configured": config["password_configured"],
+            "password_valid_length": config["password_valid_length"],
+            "session_signing_configured": config["session_signing_configured"],
+        },
     }
 
 
