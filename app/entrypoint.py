@@ -16,6 +16,7 @@ from app.routes.commercial_intelligence import router as commercial_intelligence
 from app.routes.contract_verification import router as contract_verification_router
 from app.routes.creator_self_service import router as creator_self_service_router
 from app.routes.localization import router as localization_router
+from app.routes.pro_account_billing import router as pro_account_billing_router
 from app.routes.public_alert_signals import router as public_alert_signals_router
 from app.routes.public_closing_soon import router as public_closing_soon_router
 from app.routes.public_contract_verification import router as public_contract_verification_router
@@ -35,6 +36,7 @@ app.include_router(commercial_intelligence_router)
 app.include_router(contract_verification_router)
 app.include_router(creator_self_service_router)
 app.include_router(localization_router)
+app.include_router(pro_account_billing_router)
 app.include_router(public_alert_signals_router)
 app.include_router(public_closing_soon_router)
 app.include_router(public_contract_verification_router)
