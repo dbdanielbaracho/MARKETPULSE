@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from app.main import app
 from app.middleware.alerts import register_alerts_middleware
+from app.middleware.clickjacking import register_clickjacking_middleware
 from app.middleware.home_platform_visibility import register_home_platform_visibility_middleware
 from app.middleware.market_intelligence import register_market_intelligence_middleware
 from app.middleware.mobile_market_experience import register_mobile_market_experience_middleware
@@ -56,5 +57,6 @@ register_relevance_pages_middleware(app)
 register_public_locale_middleware(app)
 register_public_seo_middleware(app)
 register_mobile_market_experience_middleware(app)
+register_clickjacking_middleware(app)
 # Traffic is outermost and records only successful public HTML page views.
 register_traffic_middleware(app)
