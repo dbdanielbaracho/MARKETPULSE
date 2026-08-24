@@ -44,7 +44,7 @@ def test_control_plane_requires_admin_and_publish_changes_live_route(tmp_path, m
     assert snapshot.status_code == 200
 
     payload = deepcopy(DEFAULT_CONTROL_PLANE)
-    payload["providers"]["kalshi"].update({
+    payload["providers"]["kalshi_us"].update({
         "commercial_verified": True,
         "partner_id": "pb-test-partner",
         "tracking_parameter": "ref",
