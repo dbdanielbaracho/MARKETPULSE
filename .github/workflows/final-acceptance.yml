@@ -5,10 +5,12 @@ on:
     branches: [main]
     paths:
       - 'docs/REQUIREMENTS.md'
+      - '.github/workflows/final-acceptance.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
+  statuses: write
 
 concurrency:
   group: predibeacon-final-acceptance
@@ -93,3 +95,31 @@ jobs:
               raise SystemExit(f'Potential private credential/economics leakage in evidence: {leaked}')
           print(f'Explicit external blocks retained: {blocked}')
           PY
+
+  publish-status:
+    if: always()
+    needs: final-acceptance
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish final acceptance commit status
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ACCEPTANCE_RESULT: ${{ needs.final-acceptance.result }}
+        run: |
+          state="failure"
+          description="Final project acceptance failed"
+          if [[ "${ACCEPTANCE_RESULT}" == "success" ]]; then
+            state="success"
+            description="Final project acceptance passed"
+          fi
+          gh api --method POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "/repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
+            -f state="${state}" \
+            -f target_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            -f description="${description}" \
+            -f context="predibeacon/final-acceptance"
+          if [[ "${state}" != "success" ]]; then
+            exit 1
+          fi
