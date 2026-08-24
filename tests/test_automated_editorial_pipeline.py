@@ -86,7 +86,7 @@ def test_diverse_evidence_runs_through_ai_worker_and_scheduled_publication(tmp_p
         assert provider.calls == 1
 
         draft = store.drafts("pending_review")[0]
-        persisted = store.evidence(candidate.candidate_id)
+        persisted = store.evidence(draft.candidate_id)
         assert set(draft.citation_ids).issubset({item.evidence_id for item in persisted})
         store.review_draft(draft.draft_id, "approved", "editor_verified_sources", NOW)
         store.schedule_publication(draft.draft_id, NOW - timedelta(seconds=1), "automated_due_release")
