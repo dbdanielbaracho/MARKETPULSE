@@ -10,7 +10,7 @@ _REMAINING_NEW = "function remaining(v){if(!v)return'Not published';const ms=new
 _AGO_OLD = "function ago(v){const ms=Date.now()-new Date(v).getTime();if(!Number.isFinite(ms)||ms<0)return'Unknown';const m=Math.floor(ms/60000);return m<1?'Just now':m<60?m+'m ago':Math.floor(m/60)+'h ago'}"
 _AGO_NEW = "function ago(v){const ms=Date.now()-new Date(v).getTime();if(!Number.isFinite(ms)||ms<0)return'Unknown';const locale=document.documentElement.lang||'en',rtf=new Intl.RelativeTimeFormat(locale,{numeric:'auto'}),m=Math.floor(ms/60000);if(m<1)return rtf.format(0,'minute');if(m<60)return rtf.format(-m,'minute');return rtf.format(-Math.floor(m/60),'hour')}"
 
-_ABSOLUTE_TIME = "function absoluteTime(v){if(!v)return'';const d=new Date(v);if(!Number.isFinite(d.getTime()))return'';const locale=document.documentElement.lang||'en';return new Intl.DateTimeFormat(locale,{dateStyle:'medium',timeStyle:'short',timeZoneName:'short'}).format(d)}"
+_ABSOLUTE_TIME = "function absoluteTime(v){if(!v)return'';const d=new Date(v);if(!Number.isFinite(d.getTime()))return'';const locale=document.documentElement.lang||'en';return new Intl.DateTimeFormat(locale,{year:'numeric',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZoneName:'short'}).format(d)}"
 
 _REMAINING_ASSIGNMENT_OLD = "document.querySelector('#remaining').textContent=remaining(m.closes_at);"
 _REMAINING_ASSIGNMENT_NEW = "const remainingEl=document.querySelector('#remaining');remainingEl.textContent=remaining(m.closes_at);remainingEl.title=absoluteTime(m.closes_at);"
