@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Awaitable, Callable, Protocol, runtime_checkable
 
 from app.config.runtime import RuntimeFlags
@@ -25,6 +26,17 @@ class RefreshBatch:
     markets: tuple[NormalizedMarket, ...]
     signals: tuple[MarketSignal, ...]
     errors: tuple[str, ...]
+
+
+def _is_open_market(market: NormalizedMarket, *, now: datetime) -> bool:
+    """Fail closed when a contract deadline is invalid or no longer in the future."""
+    closes_at = market.closes_at
+    if closes_at is None:
+        return True
+    if closes_at.tzinfo is None or closes_at.utcoffset() is None:
+        logger.warning("market has timezone-naive closes_at and will not enter active discovery: %s", market.canonical_id)
+        return False
+    return closes_at > now
 
 
 class IngestionWorker:
@@ -76,7 +88,11 @@ class IngestionWorker:
 
         processed: list[NormalizedMarket] = []
         signals: list[MarketSignal] = []
+        now = datetime.now(timezone.utc)
         for market in markets:
+            if not _is_open_market(market, now=now):
+                logger.info("excluding non-open market from active discovery: %s", market.canonical_id)
+                continue
             try:
                 current = snapshot(market)
                 previous = self.store.previous(current.canonical_id, current.observed_at.isoformat())
