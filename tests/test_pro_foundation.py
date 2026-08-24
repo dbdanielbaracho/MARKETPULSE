@@ -1,5 +1,5 @@
 from app.domain.pro import PRO_PACKAGE, ProFeature, has_entitlement
-from app.routes.public_pro import _billing_ready, pro_package
+from app.routes.public_pro import _billing_ready, _checkout_ready, pro_package
 
 
 def test_pro_access_is_explicit_entitlement_only():
@@ -16,23 +16,38 @@ def test_pro_package_has_stable_feature_keys():
 
 
 def test_billing_readiness_fails_closed_without_provider_config(monkeypatch):
-    for name in ("MP_STRIPE_SECRET_KEY", "MP_STRIPE_PRO_PRICE_ID", "MP_STRIPE_WEBHOOK_SECRET"):
+    for name in ("MP_STRIPE_SECRET_KEY", "MP_STRIPE_PRO_PRICE_ID", "MP_STRIPE_WEBHOOK_SECRET", "MP_PRO_PRODUCT_ID"):
         monkeypatch.delenv(name, raising=False)
     assert _billing_ready() is False
+    assert _checkout_ready() is False
     payload = pro_package()
     assert payload["billing_available"] is False
     assert payload["checkout_available"] is False
 
 
-def test_public_package_never_exposes_provider_ids_or_secrets(monkeypatch):
+def test_checkout_requires_billing_and_product_identity_without_exposing_them(monkeypatch):
     monkeypatch.setenv("MP_STRIPE_SECRET_KEY", "sk_test_private")
     monkeypatch.setenv("MP_STRIPE_PRO_PRICE_ID", "price_private")
     monkeypatch.setenv("MP_STRIPE_WEBHOOK_SECRET", "whsec_private")
+    monkeypatch.delenv("MP_PRO_PRODUCT_ID", raising=False)
+    payload = pro_package()
+    assert payload["billing_available"] is True
+    assert payload["checkout_available"] is False
+
+    monkeypatch.setenv("MP_PRO_PRODUCT_ID", "prod_private")
     payload = pro_package()
     serialized = repr(payload)
     assert payload["billing_available"] is True
-    assert payload["checkout_available"] is False
-    assert "sk_test_private" not in serialized
-    assert "price_private" not in serialized
-    assert "whsec_private" not in serialized
-    assert "commission" not in serialized.casefold()
+    assert payload["checkout_available"] is True
+    for forbidden in ("sk_test_private", "price_private", "whsec_private", "prod_private", "commission"):
+        assert forbidden.casefold() not in serialized.casefold()
+
+
+def test_invalid_product_configuration_keeps_checkout_fail_closed(monkeypatch):
+    monkeypatch.setenv("MP_STRIPE_SECRET_KEY", "sk_test_private")
+    monkeypatch.setenv("MP_STRIPE_PRO_PRICE_ID", "price_private")
+    monkeypatch.setenv("MP_STRIPE_WEBHOOK_SECRET", "whsec_private")
+    monkeypatch.setenv("MP_PRO_PRODUCT_ID", "bad product id")
+    assert _billing_ready() is True
+    assert _checkout_ready() is False
+    assert pro_package()["checkout_available"] is False
