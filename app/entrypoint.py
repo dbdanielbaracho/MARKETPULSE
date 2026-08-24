@@ -13,6 +13,7 @@ from app.routes.admin_launch_readiness import router as admin_launch_readiness_r
 from app.routes.admin_traffic import router as admin_traffic_router
 from app.routes.commercial_intelligence import router as commercial_intelligence_router
 from app.routes.contract_verification import router as contract_verification_router
+from app.routes.creator_revenue_share import router as creator_revenue_share_router
 from app.routes.creator_self_service import router as creator_self_service_router
 from app.routes.localization import router as localization_router
 from app.routes.public_alert_signals import router as public_alert_signals_router
@@ -30,6 +31,7 @@ app.include_router(admin_launch_readiness_router)
 app.include_router(admin_traffic_router)
 app.include_router(commercial_intelligence_router)
 app.include_router(contract_verification_router)
+app.include_router(creator_revenue_share_router)
 app.include_router(creator_self_service_router)
 app.include_router(localization_router)
 app.include_router(public_alert_signals_router)
