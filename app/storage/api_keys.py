@@ -15,6 +15,7 @@ class ApiPrincipal:
     scopes: tuple[str, ...]
     daily_limit: int
     usage_today: int
+    account_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -27,6 +28,7 @@ class ApiKeyRecord:
     active: bool
     created_at: datetime
     revoked_at: datetime | None
+    account_id: str | None = None
 
 
 class ApiKeyStore:
@@ -46,7 +48,8 @@ class ApiKeyStore:
                     daily_limit INTEGER NOT NULL,
                     active INTEGER NOT NULL,
                     created_at TEXT NOT NULL,
-                    revoked_at TEXT
+                    revoked_at TEXT,
+                    account_id TEXT
                 );
                 CREATE TABLE IF NOT EXISTS commercial_api_usage (
                     key_id TEXT NOT NULL,
@@ -59,6 +62,11 @@ class ApiKeyStore:
             columns = {row["name"] for row in connection.execute("PRAGMA table_info(commercial_api_keys)")}
             if "revoked_at" not in columns:
                 connection.execute("ALTER TABLE commercial_api_keys ADD COLUMN revoked_at TEXT")
+            if "account_id" not in columns:
+                connection.execute("ALTER TABLE commercial_api_keys ADD COLUMN account_id TEXT")
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_commercial_api_keys_account ON commercial_api_keys(account_id, active)"
+            )
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.path, timeout=5)
@@ -71,19 +79,42 @@ class ApiKeyStore:
     def _hash(token: str) -> str:
         return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
-    def create(self, *, key_id: str, raw_token: str, name: str, plan: str, scopes: tuple[str, ...], daily_limit: int) -> None:
+    def create(
+        self,
+        *,
+        key_id: str,
+        raw_token: str,
+        name: str,
+        plan: str,
+        scopes: tuple[str, ...],
+        daily_limit: int,
+        account_id: str | None = None,
+    ) -> None:
         if not key_id or not raw_token or len(raw_token) < 32:
             raise ValueError("invalid API credential")
         if not scopes or any(scope not in {"markets:read", "history:read"} for scope in scopes):
             raise ValueError("invalid API scope")
         if daily_limit < 1 or daily_limit > 1_000_000:
             raise ValueError("daily limit out of bounds")
+        if account_id is not None:
+            account_id = account_id.strip()
+            if not account_id.startswith("acct_") or len(account_id) > 120:
+                raise ValueError("invalid commercial API account id")
         with self._connect() as connection:
             connection.execute(
                 """INSERT INTO commercial_api_keys
-                (key_id, token_hash, name, plan, scopes, daily_limit, active, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, 1, ?)""",
-                (key_id, self._hash(raw_token), name[:100], plan[:50], ",".join(sorted(set(scopes))), daily_limit, datetime.now(timezone.utc).isoformat()),
+                (key_id, token_hash, name, plan, scopes, daily_limit, active, created_at, account_id)
+                VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)""",
+                (
+                    key_id,
+                    self._hash(raw_token),
+                    name[:100],
+                    plan[:50],
+                    ",".join(sorted(set(scopes))),
+                    daily_limit,
+                    datetime.now(timezone.utc).isoformat(),
+                    account_id,
+                ),
             )
 
     def authorize(self, raw_token: str, required_scope: str) -> ApiPrincipal:
@@ -115,8 +146,9 @@ class ApiKeyStore:
                 ON CONFLICT(key_id, usage_date) DO UPDATE SET request_count=excluded.request_count""",
                 (row["key_id"], today, next_count),
             )
-        return ApiPrincipal(row["key_id"], row["name"], row["plan"], scopes, row["daily_limit"], next_count)
-
+        return ApiPrincipal(
+            row["key_id"], row["name"], row["plan"], scopes, row["daily_limit"], next_count, row["account_id"]
+        )
 
     @staticmethod
     def _record(row: sqlite3.Row) -> ApiKeyRecord:
@@ -129,6 +161,7 @@ class ApiKeyStore:
             active=bool(row["active"]),
             created_at=datetime.fromisoformat(row["created_at"]),
             revoked_at=datetime.fromisoformat(row["revoked_at"]) if row["revoked_at"] else None,
+            account_id=row["account_id"],
         )
 
     def list_keys(self, limit: int = 100) -> list[ApiKeyRecord]:
@@ -141,39 +174,83 @@ class ApiKeyStore:
             ).fetchall()
         return [self._record(row) for row in rows]
 
-    def revoke(self, key_id: str) -> bool:
+    def list_for_account(self, account_id: str, limit: int = 100) -> list[ApiKeyRecord]:
+        if limit < 1 or limit > 1000:
+            raise ValueError("limit out of bounds")
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM commercial_api_keys WHERE account_id=? ORDER BY created_at DESC LIMIT ?",
+                (account_id.strip(), limit),
+            ).fetchall()
+        return [self._record(row) for row in rows]
+
+    def revoke(self, key_id: str, *, account_id: str | None = None) -> bool:
         now = datetime.now(timezone.utc).isoformat()
+        where = "key_id=? AND active=1"
+        params: tuple[object, ...] = (now, key_id)
+        if account_id is not None:
+            where += " AND account_id=?"
+            params = (now, key_id, account_id.strip())
         with self._connect() as connection:
             result = connection.execute(
-                "UPDATE commercial_api_keys SET active=0, revoked_at=? WHERE key_id=? AND active=1",
-                (now, key_id),
+                f"UPDATE commercial_api_keys SET active=0, revoked_at=? WHERE {where}",
+                params,
             )
         return result.rowcount == 1
 
-    def rotate(self, *, old_key_id: str, new_key_id: str, raw_token: str) -> ApiKeyRecord:
+    def revoke_for_account(self, account_id: str) -> int:
+        now = datetime.now(timezone.utc).isoformat()
+        with self._connect() as connection:
+            result = connection.execute(
+                "UPDATE commercial_api_keys SET active=0, revoked_at=? WHERE account_id=? AND active=1",
+                (now, account_id.strip()),
+            )
+        return result.rowcount
+
+    def rotate(
+        self,
+        *,
+        old_key_id: str,
+        new_key_id: str,
+        raw_token: str,
+        account_id: str | None = None,
+    ) -> ApiKeyRecord:
         if not new_key_id or not raw_token or len(raw_token) < 32:
             raise ValueError("invalid API credential")
         now = datetime.now(timezone.utc).isoformat()
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
-            old = connection.execute(
-                "SELECT * FROM commercial_api_keys WHERE key_id=? AND active=1",
-                (old_key_id,),
-            ).fetchone()
+            if account_id is None:
+                old = connection.execute(
+                    "SELECT * FROM commercial_api_keys WHERE key_id=? AND active=1", (old_key_id,)
+                ).fetchone()
+            else:
+                old = connection.execute(
+                    "SELECT * FROM commercial_api_keys WHERE key_id=? AND account_id=? AND active=1",
+                    (old_key_id, account_id.strip()),
+                ).fetchone()
             if old is None:
                 raise KeyError("active API key not found")
             connection.execute(
                 """INSERT INTO commercial_api_keys
-                (key_id, token_hash, name, plan, scopes, daily_limit, active, created_at, revoked_at)
-                VALUES (?, ?, ?, ?, ?, ?, 1, ?, NULL)""",
-                (new_key_id, self._hash(raw_token), old["name"], old["plan"], old["scopes"], old["daily_limit"], now),
+                (key_id, token_hash, name, plan, scopes, daily_limit, active, created_at, revoked_at, account_id)
+                VALUES (?, ?, ?, ?, ?, ?, 1, ?, NULL, ?)""",
+                (
+                    new_key_id,
+                    self._hash(raw_token),
+                    old["name"],
+                    old["plan"],
+                    old["scopes"],
+                    old["daily_limit"],
+                    now,
+                    old["account_id"],
+                ),
             )
             connection.execute(
                 "UPDATE commercial_api_keys SET active=0, revoked_at=? WHERE key_id=?",
                 (now, old_key_id),
             )
             current = connection.execute(
-                "SELECT * FROM commercial_api_keys WHERE key_id=?",
-                (new_key_id,),
+                "SELECT * FROM commercial_api_keys WHERE key_id=?", (new_key_id,)
             ).fetchone()
         return self._record(current)
