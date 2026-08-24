@@ -8,6 +8,7 @@ from fastapi.responses import Response
 from app.services.locale_number_time import localize_market_formatting
 from app.services.public_locale import DEFAULT_LOCALE, localize_public_html, normalize_locale
 from app.services.public_locale_extended import extend_public_translation
+from app.services.public_locale_legal import translate_legal_page
 from app.services.public_locale_trust import translate_trust_page
 from app.services.public_locale_content import translate_content_shell
 
@@ -134,6 +135,7 @@ def register_public_locale_middleware(app: FastAPI) -> None:
         )
         localized = localize_public_html(path, body, locale)
         localized = extend_public_translation(path, localized, locale)
+        localized = translate_legal_page(path, localized, locale)
         localized = translate_trust_page(path, localized, locale)
         localized = translate_content_shell(path, localized, locale)
         localized = localize_market_formatting(path, localized)
