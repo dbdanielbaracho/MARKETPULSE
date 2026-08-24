@@ -2,8 +2,9 @@ import sqlite3
 
 from fastapi.testclient import TestClient
 
-from app.domain.revenue import AttributionRecord
+from app.domain.revenue import AttributionRecord, RevenueState
 from app.entrypoint import app
+from app.storage.creator_agreements import CreatorAgreementStore
 from app.storage.creator_credentials import CreatorCredentialStore
 from app.storage.revenue import RevenueStore
 
@@ -85,9 +86,94 @@ def test_creator_self_service_uses_token_identity_not_request_identity(tmp_path,
     assert summary["creator_id"] == "creator-a"
     assert summary["click_count"] == 1
     assert summary["market_count"] == 1
+    assert summary["creator_amount_due"] is None
     assert response.headers["cache-control"] == "no-store"
     assert "configured-partner" not in response.text
     assert "share_basis_points" not in response.text
+
+
+def test_creator_self_service_returns_only_derived_due_after_approved_agreement(tmp_path, monkeypatch):
+    path = str(tmp_path / "creator-private-due.db")
+    admin_token = "b" * 40
+    monkeypatch.setenv("MP_DATABASE_PATH", path)
+    monkeypatch.setenv("MP_ADMIN_TOKEN", admin_token)
+
+    revenue = RevenueStore(path)
+    record = AttributionRecord(
+        attribution_id="attr-paid",
+        click_id="click-paid",
+        partner_id="private-partner-id",
+        venue="kalshi",
+        country="US",
+    )
+    revenue.record_click(record)
+    revenue.record_click_context(
+        click_id=record.click_id,
+        market_id="market-paid",
+        creator_id="creator-paid",
+        channel="test",
+    )
+    for state, event in (
+        (RevenueState.ATTRIBUTED, "event-1"),
+        (RevenueState.QUALIFIED, "event-2"),
+        (RevenueState.COMMISSION_PENDING, "event-3"),
+    ):
+        revenue.transition(record.attribution_id, state, partner_event_id=event)
+    revenue.transition(
+        record.attribution_id,
+        RevenueState.APPROVED,
+        commission_amount=12.50,
+        currency="USD",
+        partner_event_id="event-4",
+    )
+    revenue.transition(record.attribution_id, RevenueState.PAYABLE, partner_event_id="event-5")
+    revenue.transition(record.attribution_id, RevenueState.PAID, partner_event_id="event-6")
+
+    agreements = CreatorAgreementStore(path)
+    agreements.configure(
+        creator_id="creator-paid",
+        agreement_id="agreement-private",
+        share_basis_points=4000,
+        approved=False,
+    )
+
+    issued = client.post(
+        "/api/v1/admin/creator-credentials",
+        json={"creator_id": "creator-paid"},
+        headers={"X-MarketPulse-Admin-Token": admin_token},
+    )
+    assert issued.status_code == 200
+    creator_token = issued.json()["creator_token"]
+
+    pending = client.get(
+        "/api/v1/creator/me/revenue",
+        headers={"X-PrediBeacon-Creator-Token": creator_token},
+    )
+    assert pending.status_code == 200
+    assert pending.json()["creator_amount_due"] is None
+
+    agreements.approve("creator-paid", "agreement-private")
+    approved = client.get(
+        "/api/v1/creator/me/revenue",
+        headers={"X-PrediBeacon-Creator-Token": creator_token},
+    )
+    assert approved.status_code == 200
+    body = approved.json()
+    assert body["creator_amount_due"] == {"USD": 5.0}
+    assert body["paid_partner_revenue_totals"] == {"USD": 12.5}
+    assert approved.headers["cache-control"] == "no-store"
+    assert "private-partner-id" not in approved.text
+    assert "agreement-private" not in approved.text
+    assert "share_basis_points" not in approved.text
+    assert "4000" not in approved.text
+
+    agreements.revoke("creator-paid")
+    revoked = client.get(
+        "/api/v1/creator/me/revenue",
+        headers={"X-PrediBeacon-Creator-Token": creator_token},
+    )
+    assert revoked.status_code == 200
+    assert revoked.json()["creator_amount_due"] is None
 
 
 def test_creator_credential_admin_routes_require_admin_auth(tmp_path, monkeypatch):
