@@ -1,29 +1,24 @@
 from __future__ import annotations
 
-import os
-
 from fastapi import APIRouter, Depends
 
 import app.main as core
+from app.services.runtime_control import effective_provider
 from app.storage.traffic import TrafficStore
 
 
 router = APIRouter(prefix="/api/v1/admin", tags=["admin-launch-readiness"])
 
 
-def _truthy(name: str) -> bool:
-    return os.getenv(name, "false").strip().casefold() in {"1", "true", "yes", "on"}
-
-
 def _partner_mode(venue: str) -> str:
-    verified = _truthy(f"MP_{venue.upper()}_COMMERCIAL_VERIFIED")
-    partner_id = bool(os.getenv(f"MP_{venue.upper()}_PARTNER_ID", "").strip())
-    return "partner" if verified and partner_id else "organic"
+    provider = effective_provider(core._database_path(), venue)
+    return "partner" if provider.enabled and provider.commercial_verified and provider.attribution_id else "organic"
 
 
 def _venue_route_available(venue: str) -> bool:
     market = next((item for item in core._DISCOVERY if item.venue == venue), None)
-    return bool(market and core._market_route(market).available)
+    provider = effective_provider(core._database_path(), venue)
+    return bool(provider.enabled and market and core._market_route(market).available)
 
 
 @router.get("/launch-readiness", dependencies=[Depends(core._require_admin)])
@@ -105,6 +100,6 @@ def launch_readiness() -> dict[str, object]:
             "active_partner_venues": partner_active,
             "organic_or_pending_venues": partner_pending,
             "blocks_product_launch": False,
-            "notice": "Organic verified routing can launch before affiliate/partner approval; partner revenue activates only with verified commercial configuration.",
+            "notice": "Published Control Plane settings govern live outbound routing; partner revenue activates only with verified commercial configuration.",
         },
     }
