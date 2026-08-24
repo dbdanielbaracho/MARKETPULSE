@@ -8,3 +8,10 @@ features:
   outbound: false
   automated_content: false
 venues: {}
+policy:
+  audience: uk_informational
+  commercial_outbound_allowed: false
+  paid_social_allowed: false
+  minimum_age: 18
+  route_mode: informational_only
+  reason: country_commercial_policy_not_enabled
