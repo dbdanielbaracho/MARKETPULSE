@@ -5,6 +5,7 @@ import os
 from fastapi import APIRouter
 
 from app.domain.pro import PRO_PACKAGE
+from app.services.pro_entitlements import ProProductConfig
 
 router = APIRouter()
 
@@ -18,6 +19,15 @@ def _billing_ready() -> bool:
     return all(os.getenv(name, "").strip() for name in required)
 
 
+def _checkout_ready() -> bool:
+    if not _billing_ready():
+        return False
+    try:
+        return ProProductConfig.from_env() is not None
+    except ValueError:
+        return False
+
+
 @router.get("/api/v1/pro/package")
 def pro_package() -> dict[str, object]:
     """Public product capabilities only; never returns secrets, IDs or invented prices."""
@@ -26,5 +36,5 @@ def pro_package() -> dict[str, object]:
         "name": PRO_PACKAGE.name,
         "features": [feature.value for feature in PRO_PACKAGE.features],
         "billing_available": _billing_ready(),
-        "checkout_available": False,
+        "checkout_available": _checkout_ready(),
     }
