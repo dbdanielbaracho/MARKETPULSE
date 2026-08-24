@@ -25,6 +25,8 @@ def test_every_channel_fails_closed_by_default(monkeypatch, channel):
 def test_credentials_alone_never_enable_social_distribution(monkeypatch):
     monkeypatch.setenv("MP_SOCIAL_DISTRIBUTION", "true")
     monkeypatch.setenv("MP_INSTAGRAM_ACCESS_TOKEN", "configured-not-real")
+    monkeypatch.setenv("MP_INSTAGRAM_USER_ID", "123456")
+    monkeypatch.setenv("MP_META_GRAPH_VERSION", "v99.0")
     monkeypatch.setenv("MP_INSTAGRAM_AUTHORIZED", "true")
 
     result = channel_readiness(
@@ -37,6 +39,18 @@ def test_credentials_alone_never_enable_social_distribution(monkeypatch):
 
     assert result.ready is False
     assert result.reasons == ("editorial_approval_required",)
+
+
+def test_meta_channels_require_provider_resource_ids_and_version(monkeypatch):
+    monkeypatch.setenv("MP_SOCIAL_DISTRIBUTION", "true")
+    monkeypatch.setenv("MP_INSTAGRAM_ACCESS_TOKEN", "token")
+    monkeypatch.setenv("MP_INSTAGRAM_AUTHORIZED", "true")
+    monkeypatch.setenv("MP_WHATSAPP_ACCESS_TOKEN", "token")
+    monkeypatch.setenv("MP_WHATSAPP_AUTHORIZED", "true")
+    for channel in ("instagram", "whatsapp"):
+        result = channel_readiness(channel, country="US", editorial_approved=True, partner_contract_verified=True, paid_or_commercial=False)
+        assert result.ready is False
+        assert "credential_not_configured" in result.reasons
 
 
 def test_commercial_social_remains_blocked_by_contract_and_country_policy(monkeypatch):
