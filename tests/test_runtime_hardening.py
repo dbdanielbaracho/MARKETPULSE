@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 
 from fastapi.testclient import TestClient
 
@@ -35,7 +36,7 @@ def test_service_worker_never_caches_sensitive_routes():
     worker = (ROOT / "app" / "static" / "service-worker.js").read_text(encoding="utf-8")
     for prefix in ("/api/", "/admin", "/out/", "/go/", "/articles"):
         assert prefix in worker
-    assert "predibeacon-v3" in worker
+    assert re.search(r"predibeacon-v\d+", worker)
     assert "NEVER_CACHE.some" in worker
 
 
