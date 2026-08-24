@@ -117,9 +117,31 @@ class _RecordingClient:
     async def __aexit__(self, *args):
         return None
 
-    async def get(self, url, params):
-        self.calls.append((url, params))
+    async def get(self, url, params=None):
+        self.calls.append((url, params or {}))
         return _FakeResponse(self.payload)
+
+
+class _KalshiEnrichmentClient(_RecordingClient):
+    async def get(self, url, params=None):
+        self.calls.append((url, params or {}))
+        if url.endswith("/markets"):
+            return _FakeResponse({
+                "markets": [{
+                    "ticker": "KXMLBTEST-26AUG24-ONE",
+                    "event_ticker": "KXMLBTEST-26AUG24",
+                    "title": "Missing series in market payload",
+                }],
+                "cursor": None,
+            })
+        if url.endswith("/events/KXMLBTEST-26AUG24"):
+            return _FakeResponse({
+                "event": {
+                    "event_ticker": "KXMLBTEST-26AUG24",
+                    "series_ticker": "KXMLBTEST",
+                }
+            })
+        raise AssertionError(f"unexpected URL: {url}")
 
 
 def test_polymarket_fetch_prioritizes_current_volume(monkeypatch):
@@ -144,3 +166,17 @@ def test_kalshi_fetch_excludes_multivariate_combos(monkeypatch):
     _, params = client.calls[0]
     assert params["mve_filter"] == "exclude"
     assert params["status"] == "open"
+
+
+def test_kalshi_fetch_enriches_missing_series_from_canonical_event(monkeypatch):
+    client = _KalshiEnrichmentClient({})
+    monkeypatch.setattr("app.adapters.kalshi.httpx.AsyncClient", lambda **kwargs: client)
+
+    markets, cursor = asyncio.run(
+        KalshiAdapter("https://external-api.kalshi.com/trade-api/v2").fetch_markets(limit=25)
+    )
+
+    assert cursor is None
+    assert len(markets) == 1
+    assert str(markets[0].source_url) == "https://kalshi.com/markets/kxmlbtest"
+    assert any(url.endswith("/events/KXMLBTEST-26AUG24") for url, _ in client.calls)
