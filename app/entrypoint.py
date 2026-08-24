@@ -9,6 +9,7 @@ from app.middleware.public_locale import register_public_locale_middleware
 from app.middleware.public_seo import register_public_seo_middleware
 from app.middleware.relevance_pages import register_relevance_pages_middleware
 from app.middleware.traffic import register_traffic_middleware
+from app.routes.admin_creator_agreements import router as admin_creator_agreements_router
 from app.routes.admin_launch_readiness import router as admin_launch_readiness_router
 from app.routes.admin_traffic import router as admin_traffic_router
 from app.routes.commercial_intelligence import router as commercial_intelligence_router
@@ -26,6 +27,7 @@ from app.routes.public_trade_activity import router as public_trade_activity_rou
 from app.routes.public_venue_conditions import router as public_venue_conditions_router
 
 
+app.include_router(admin_creator_agreements_router)
 app.include_router(admin_launch_readiness_router)
 app.include_router(admin_traffic_router)
 app.include_router(commercial_intelligence_router)
