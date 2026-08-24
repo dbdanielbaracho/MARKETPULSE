@@ -4,6 +4,15 @@ Date: 2026-08-24
 
 MP-042's remaining internal implementation gap has been closed. PrediBeacon now has durable server-originated Web Push infrastructure with explicit user opt-in and fail-closed activation.
 
+## Primary-source decision check
+
+Current primary-source guidance was rechecked before accepting this boundary:
+
+- W3C Push API Working Draft (1 Dec 2025): https://www.w3.org/TR/push-api/ — the Push API is specifically designed for application-server messages that can be delivered when the web application is not active, through the application's Service Worker. PrediBeacon therefore treats a real inactive/closed foreground browser delivery as the production proof required for background push.
+- IETF RFC 8292 (VAPID): https://www.rfc-editor.org/rfc/rfc8292.html — VAPID identifies the application server to a Web Push service with a signed token and application-server key. PrediBeacon therefore keeps the private signing material outside GitHub and fails closed until valid VAPID configuration exists.
+
+Decision: ADOPT the standards' application-server/Service-Worker model and VAPID identity boundary; ADAPT it with project-specific same-origin notification navigation, hashed management credentials and transition-preserving fail-closed behavior.
+
 ## Verified internal implementation
 
 - browser UI exposes explicit background-push opt-in and opt-out;
