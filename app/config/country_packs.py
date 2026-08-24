@@ -11,6 +11,7 @@ import yaml
 @dataclass(frozen=True)
 class CountryPackPolicy:
     audience: str
+    informational_content_allowed: bool
     commercial_outbound_allowed: bool
     paid_social_allowed: bool
     minimum_age: int
@@ -46,6 +47,7 @@ _TOP_LEVEL_KEYS = {
 _FEATURE_KEYS = {"discovery", "outbound", "automated_content"}
 _POLICY_KEYS = {
     "audience",
+    "informational_content_allowed",
     "commercial_outbound_allowed",
     "paid_social_allowed",
     "minimum_age",
@@ -126,6 +128,10 @@ def load_country_pack(path: Path) -> CountryPack:
         raise ValueError("policy.minimum_age is invalid")
     policy = CountryPackPolicy(
         audience=_text(policy_data.get("audience"), "policy.audience"),
+        informational_content_allowed=_bool(
+            policy_data.get("informational_content_allowed"),
+            "policy.informational_content_allowed",
+        ),
         commercial_outbound_allowed=_bool(
             policy_data.get("commercial_outbound_allowed"),
             "policy.commercial_outbound_allowed",
