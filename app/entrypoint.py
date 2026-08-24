@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from app.main import app
+from app.middleware.admin_session import register_admin_session_middleware
 from app.middleware.alerts import register_alerts_middleware
 from app.middleware.clickjacking import register_clickjacking_middleware
 from app.middleware.control_plane_outbound import register_control_plane_outbound_middleware
@@ -15,6 +16,7 @@ from app.middleware.traffic import register_traffic_middleware
 from app.routes.admin_control_plane import router as admin_control_plane_router
 from app.routes.admin_creator_agreements import router as admin_creator_agreements_router
 from app.routes.admin_launch_readiness import router as admin_launch_readiness_router
+from app.routes.admin_portal import router as admin_portal_router
 from app.routes.admin_traffic import router as admin_traffic_router
 from app.routes.commercial_api_billing import router as commercial_api_billing_router
 from app.routes.commercial_intelligence import router as commercial_intelligence_router
@@ -34,6 +36,7 @@ from app.routes.public_venue_conditions import router as public_venue_conditions
 from app.routes.web_push import router as web_push_router
 
 
+app.include_router(admin_portal_router)
 app.include_router(admin_control_plane_router)
 app.include_router(admin_creator_agreements_router)
 app.include_router(admin_launch_readiness_router)
@@ -64,5 +67,8 @@ register_mobile_market_experience_middleware(app)
 register_home_card_outbound_middleware(app)
 register_control_plane_outbound_middleware(app)
 register_clickjacking_middleware(app)
-# Traffic is outermost and records only successful public HTML page views.
+# Traffic records only successful public HTML page views.
 register_traffic_middleware(app)
+# Admin auth is intentionally outermost so private routes are redirected before
+# public middleware can transform or count them.
+register_admin_session_middleware(app)
