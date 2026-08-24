@@ -10,7 +10,7 @@ def test_revenue_page_is_hardened():
     assert response.status_code == 200
     assert 'noindex,nofollow' in response.text
     assert 'type="password"' in response.text
-    assert "No partner value is estimated." in response.text
+    assert "Administrator sign in" in response.text
     assert response.headers["cache-control"] == "no-store"
     assert response.headers["x-frame-options"] == "DENY"
 
