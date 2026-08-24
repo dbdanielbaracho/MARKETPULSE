@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 from babel.dates import format_datetime
 from babel.numbers import format_currency
@@ -45,6 +46,6 @@ def format_country_datetime(
     return format_datetime(
         value,
         format=format,
-        tzinfo=policy.default_timezone,
+        tzinfo=ZoneInfo(policy.default_timezone),
         locale=_babel_locale(policy),
     )
