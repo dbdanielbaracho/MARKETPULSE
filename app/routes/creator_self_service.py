@@ -8,6 +8,8 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Response
 from pydantic import BaseModel, Field
 
 import app.main as core
+from app.services.creator_revenue_share import creator_amount_due
+from app.storage.creator_agreements import CreatorAgreementStore
 from app.storage.creator_credentials import CreatorCredential, CreatorCredentialStore
 from app.storage.revenue import RevenueStore
 
@@ -80,4 +82,19 @@ def creator_self_revenue(
 ) -> dict[str, object]:
     response.headers["Cache-Control"] = "no-store"
     response.headers["Pragma"] = "no-cache"
-    return RevenueStore(core._database_path()).creator_summary(credential.creator_id)
+    summary = RevenueStore(core._database_path()).creator_summary(credential.creator_id)
+    agreement = CreatorAgreementStore(core._database_path()).approved_for_creator(credential.creator_id)
+    if agreement is None:
+        return {
+            **summary,
+            "creator_amount_due": None,
+            "notice": "No creator amount is available without an explicitly approved agreement.",
+        }
+    return {
+        **summary,
+        "creator_amount_due": creator_amount_due(
+            summary.get("paid_partner_revenue_totals") or {},
+            agreement.share_basis_points,
+        ),
+        "notice": "Creator amount is derived only from reconciled paid partner revenue and an approved agreement.",
+    }
