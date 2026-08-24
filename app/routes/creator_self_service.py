@@ -8,6 +8,8 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Response
 from pydantic import BaseModel, Field
 
 import app.main as core
+from app.services.creator_revenue_share import creator_amount_due
+from app.storage.creator_agreements import CreatorAgreementStore
 from app.storage.creator_credentials import CreatorCredential, CreatorCredentialStore
 from app.storage.revenue import RevenueStore
 
@@ -80,4 +82,28 @@ def creator_self_revenue(
 ) -> dict[str, object]:
     response.headers["Cache-Control"] = "no-store"
     response.headers["Pragma"] = "no-cache"
-    return RevenueStore(core._database_path()).creator_summary(credential.creator_id)
+    base = RevenueStore(core._database_path()).creator_summary(credential.creator_id)
+    try:
+        agreement = CreatorAgreementStore(core._database_path()).approved_for_creator(credential.creator_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="invalid creator agreement state") from exc
+
+    paid_totals = base.get("paid_partner_revenue_totals") or {}
+    if agreement is None:
+        return {
+            **base,
+            "creator_amount_due": None,
+            "agreement_status": "not_approved",
+            "notice": "No creator amount is calculated without an explicitly approved revenue-share agreement.",
+        }
+
+    try:
+        amount_due = creator_amount_due(paid_totals, agreement.share_basis_points)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail="invalid paid-revenue calculation input") from exc
+    return {
+        **base,
+        "creator_amount_due": amount_due,
+        "agreement_status": "approved",
+        "notice": "Creator amount is derived only from reconciled paid partner revenue and the approved private agreement.",
+    }
