@@ -87,7 +87,7 @@ def test_country_pack_rejects_invalid_locale_currency_or_timezone():
     with pytest.raises(ValueError, match="currency"):
         _parse_policy(invalid_currency, source)
 
-    invalid_timezone = dict(base, default_timezone="EST")
+    invalid_timezone = dict(base, default_timezone="Mars/Olympus")
     with pytest.raises(ValueError, match="IANA timezone"):
         _parse_policy(invalid_timezone, source)
 
