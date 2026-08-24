@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import re
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
 _ACCESS_STATUSES = frozenset({"active", "trialing"})
+_EVENT_ID = re.compile(r"^evt_[A-Za-z0-9]{6,200}$")
 
 
 @dataclass(frozen=True)
@@ -24,8 +26,9 @@ class CommercialApiSubscriptionStore:
         self.database_path = database_path
         Path(database_path).parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as connection:
-            connection.execute(
-                """CREATE TABLE IF NOT EXISTS commercial_api_subscriptions (
+            connection.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS commercial_api_subscriptions (
                     account_id TEXT PRIMARY KEY,
                     plan TEXT NOT NULL,
                     product_id TEXT NOT NULL,
@@ -33,10 +36,15 @@ class CommercialApiSubscriptionStore:
                     status TEXT NOT NULL,
                     valid_until TEXT,
                     updated_at TEXT NOT NULL
-                )"""
-            )
-            connection.execute(
-                "CREATE UNIQUE INDEX IF NOT EXISTS idx_commercial_api_subscription_id ON commercial_api_subscriptions(subscription_id)"
+                );
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_commercial_api_subscription_id
+                    ON commercial_api_subscriptions(subscription_id);
+                CREATE TABLE IF NOT EXISTS commercial_api_billing_events (
+                    event_id TEXT PRIMARY KEY,
+                    event_type TEXT NOT NULL,
+                    processed_at TEXT NOT NULL
+                );
+                """
             )
 
     def _connect(self) -> sqlite3.Connection:
@@ -56,6 +64,32 @@ class CommercialApiSubscriptionStore:
             valid_until=datetime.fromisoformat(row["valid_until"]) if row["valid_until"] else None,
             updated_at=datetime.fromisoformat(row["updated_at"]),
         )
+
+    @staticmethod
+    def _event_id(event_id: str) -> str:
+        event_id = event_id.strip()
+        if not _EVENT_ID.fullmatch(event_id):
+            raise ValueError("invalid provider event id")
+        return event_id
+
+    def event_seen(self, event_id: str) -> bool:
+        event_id = self._event_id(event_id)
+        with self._connect() as connection:
+            return connection.execute(
+                "SELECT 1 FROM commercial_api_billing_events WHERE event_id=?", (event_id,)
+            ).fetchone() is not None
+
+    def mark_event_once(self, event_id: str, event_type: str) -> bool:
+        event_id = self._event_id(event_id)
+        event_type = event_type.strip()
+        if not event_type or len(event_type) > 160:
+            raise ValueError("invalid provider event type")
+        with self._connect() as connection:
+            result = connection.execute(
+                "INSERT OR IGNORE INTO commercial_api_billing_events(event_id,event_type,processed_at) VALUES (?,?,?)",
+                (event_id, event_type, datetime.now(timezone.utc).isoformat()),
+            )
+        return result.rowcount == 1
 
     def upsert(
         self,
