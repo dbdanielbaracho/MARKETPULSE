@@ -18,6 +18,24 @@ def test_kalshi_normalizes_midpoint_probability():
     assert market.closes_at is not None
 
 
+def test_kalshi_uses_series_ticker_for_ui_destination():
+    market = KalshiAdapter.normalize({
+        "ticker": "KXALLSVENSKANSPREAD-26AUG24MALDJU-DJU4",
+        "series_ticker": "KXALLSVENSKANSPREAD",
+        "event_ticker": "KXALLSVENSKANSPREAD-26AUG24MALDJU",
+        "title": "Example Kalshi contract",
+    })
+    assert str(market.source_url) == "https://kalshi.com/markets/kxallsvenskanspread"
+
+
+def test_kalshi_does_not_guess_ui_destination_from_contract_ticker():
+    market = KalshiAdapter.normalize({
+        "ticker": "KXALLSVENSKANSPREAD-26AUG24MALDJU-DJU4",
+        "title": "Contract without series metadata",
+    })
+    assert market.source_url is None
+
+
 def test_polymarket_normalizes_string_prices():
     market = PolymarketAdapter.normalize({
         "id": "42",
