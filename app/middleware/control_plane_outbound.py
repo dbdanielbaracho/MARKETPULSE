@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+from secrets import token_urlsafe
 from urllib.parse import urlsplit
 from uuid import uuid4
-from secrets import token_urlsafe
 
 from fastapi import Request
 from fastapi.responses import JSONResponse, RedirectResponse
@@ -18,17 +18,23 @@ _ALLOWED_HOSTS = {
 }
 
 
-def _validated_destination(market, venue: str) -> str | None:
+def _validated_destination(market, venue: str) -> tuple[str | None, str]:
     if market.venue != venue or not market.source_url:
-        return None
+        return None, "route_unavailable"
     parsed = urlsplit(market.source_url)
     if parsed.scheme != "https" or (parsed.hostname or "").lower() not in _ALLOWED_HOSTS[venue]:
-        return None
-    return market.source_url
+        return None, "unverified_destination"
+    return market.source_url, "ok"
 
 
 def register_control_plane_outbound_middleware(app) -> None:
-    """Make published admin settings authoritative for public provider routing."""
+    """Make published admin settings authoritative for public provider routing.
+
+    Jurisdiction blocks are enforced whenever the trusted deployment edge supplies a
+    country header. Unknown location preserves the pre-control-plane organic route;
+    production can later make an edge country header mandatory once that deployment
+    invariant is verified end-to-end.
+    """
 
     @app.middleware("http")
     async def control_plane_outbound(request: Request, call_next):
@@ -48,7 +54,9 @@ def register_control_plane_outbound_middleware(app) -> None:
             market = core._market_by_id(market_id)
         except Exception:
             return JSONResponse({"detail": "outbound route unavailable"}, status_code=404)
-        destination = _validated_destination(market, venue)
+        destination, destination_state = _validated_destination(market, venue)
+        if destination_state == "route_unavailable":
+            return JSONResponse({"detail": "outbound route unavailable"}, status_code=404)
         if destination is None:
             return JSONResponse({"detail": "unverified destination"}, status_code=409)
 
@@ -60,9 +68,9 @@ def register_control_plane_outbound_middleware(app) -> None:
                 status_code=403,
                 headers={"Cache-Control": "no-store"},
             )
-        if not provider.country_allowed(country):
+        if country is not None and not provider.country_allowed(country):
             return JSONResponse(
-                {"detail": "provider unavailable in this jurisdiction", "venue": venue, "country": country or "ZZ"},
+                {"detail": "provider unavailable in this jurisdiction", "venue": venue, "country": country},
                 status_code=451,
                 headers={"Cache-Control": "no-store"},
             )
@@ -94,5 +102,6 @@ def register_control_plane_outbound_middleware(app) -> None:
                 "Cache-Control": "no-store",
                 "X-PrediBeacon-Click-ID": click_id,
                 "X-PrediBeacon-Route-Mode": "partner" if provider.commercial_verified else "organic",
+                "X-PrediBeacon-Country-State": country or "unknown",
             },
         )
