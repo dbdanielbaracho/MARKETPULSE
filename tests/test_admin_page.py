@@ -5,14 +5,15 @@ def test_admin_page_uses_nonce_and_security_headers():
     response = admin_page()
     body = response.body.decode()
 
-    assert "PrediBeacon · Editorial review" in body
+    assert "PrediBeacon · Editorial" in body
     assert "__CSP_NONCE__" not in body
     assert "localStorage" not in body
     assert "sessionStorage" not in body
+    assert "Admin token" not in body
     assert "Publish manually" in body
     assert "Schedule publication" in body
     assert "Rollback" in body
-    assert "Approved drafts publish only by an explicit release or scheduled action" in body
+    assert "Secure administrator session" not in body or "Secure" in body
     assert "/api/v1/admin/publications" in body
     assert response.headers["cache-control"] == "no-store"
     assert "frame-ancestors 'none'" in response.headers["content-security-policy"]
