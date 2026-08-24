@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
 from typing import Any
 
@@ -21,8 +22,59 @@ class KalshiAdapter:
         async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
             response = await client.get(f"{self.base_url}/markets", params=params)
             response.raise_for_status()
-        payload = response.json()
-        return [self.normalize(item) for item in payload.get("markets", [])], payload.get("cursor")
+            payload = response.json()
+            raw_markets = payload.get("markets", [])
+            if not isinstance(raw_markets, list):
+                raw_markets = []
+            await self._enrich_missing_series_tickers(client, raw_markets)
+        return [self.normalize(item) for item in raw_markets], payload.get("cursor")
+
+    async def _enrich_missing_series_tickers(
+        self,
+        client: httpx.AsyncClient,
+        markets: list[dict[str, Any]],
+    ) -> None:
+        """Resolve missing series metadata from Kalshi's canonical Event endpoint.
+
+        The market list can occasionally omit ``series_ticker`` for otherwise valid
+        contracts. PrediBeacon must not guess a browser URL from a contract ticker,
+        so we resolve the parent event and use its documented ``series_ticker``.
+        Failures are deliberately soft: the market remains informational and its
+        outbound route stays unavailable rather than sending a user to a guessed URL.
+        """
+        missing_by_event: dict[str, list[dict[str, Any]]] = {}
+        for item in markets:
+            if not isinstance(item, dict) or str(item.get("series_ticker") or "").strip():
+                continue
+            event_ticker = str(item.get("event_ticker") or "").strip()
+            if event_ticker:
+                missing_by_event.setdefault(event_ticker, []).append(item)
+        if not missing_by_event:
+            return
+
+        semaphore = asyncio.Semaphore(8)
+
+        async def resolve(event_ticker: str) -> tuple[str, str | None]:
+            try:
+                async with semaphore:
+                    response = await client.get(
+                        f"{self.base_url}/events/{event_ticker}",
+                        params={"with_nested_markets": "false"},
+                    )
+                    response.raise_for_status()
+                payload = response.json()
+                event = payload.get("event", {}) if isinstance(payload, dict) else {}
+                series_ticker = str(event.get("series_ticker") or "").strip() if isinstance(event, dict) else ""
+                return event_ticker, series_ticker or None
+            except (httpx.HTTPError, ValueError, TypeError):
+                return event_ticker, None
+
+        results = await asyncio.gather(*(resolve(event_ticker) for event_ticker in missing_by_event))
+        for event_ticker, series_ticker in results:
+            if not series_ticker:
+                continue
+            for item in missing_by_event[event_ticker]:
+                item["series_ticker"] = series_ticker
 
     async def fetch_market(self, ticker: str) -> dict[str, Any]:
         """Fetch full public contract metadata, including venue resolution rules."""
@@ -89,9 +141,8 @@ class KalshiAdapter:
                 else None
             ),
             closes_at=closes_at,
-            # Kalshi's public documentation links the web UI by series ticker,
-            # while the Trade API uses the individual market ticker for contract
-            # endpoints. Never guess a UI slug from a contract ticker.
+            # Kalshi's public Event API exposes the canonical parent series ticker.
+            # Never guess a UI slug from an individual contract ticker.
             source_url=f"https://kalshi.com/markets/{series_ticker.lower()}" if series_ticker else None,
             raw=item,
         )
