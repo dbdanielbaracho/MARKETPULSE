@@ -11,7 +11,13 @@ def test_creator_agreement_is_unusable_until_explicitly_approved(tmp_path):
     )
     assert item.approved is False
     assert item.approved_at is None
+    assert store.for_creator("creator-1") is not None
     assert store.approved_for_creator("creator-1") is None
+
+    approved = store.approve("creator-1", "agreement-001")
+    assert approved.approved is True
+    assert approved.approved_at is not None
+    assert store.approved_for_creator("creator-1") is not None
 
 
 def test_approved_agreement_can_be_loaded_and_revoked(tmp_path):
@@ -29,6 +35,29 @@ def test_approved_agreement_can_be_loaded_and_revoked(tmp_path):
 
     store.revoke("creator-1")
     assert store.approved_for_creator("creator-1") is None
+    assert store.for_creator("creator-1") is not None
+
+
+def test_approval_requires_exact_configured_agreement(tmp_path):
+    store = CreatorAgreementStore(str(tmp_path / "creator.db"))
+    store.configure(
+        creator_id="creator-1",
+        agreement_id="agreement-001",
+        share_basis_points=1000,
+    )
+    try:
+        store.approve("creator-1", "agreement-002")
+    except ValueError as exc:
+        assert "does not match" in str(exc)
+    else:
+        raise AssertionError("mismatched agreement id was approved")
+
+    try:
+        store.approve("creator-2", "agreement-001")
+    except KeyError:
+        pass
+    else:
+        raise AssertionError("missing creator agreement was approved")
 
 
 def test_creator_agreement_rejects_invalid_or_ambiguous_configuration(tmp_path):
