@@ -3,7 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
+import re
 from typing import Mapping
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import yaml
 
@@ -11,6 +13,9 @@ import yaml
 @dataclass(frozen=True)
 class CountryPolicy:
     country: str
+    locale: str
+    currency: str
+    default_timezone: str
     audience: str
     informational_content_allowed: bool
     commercial_outbound_allowed: bool
@@ -22,6 +27,9 @@ class CountryPolicy:
 
 _UNKNOWN = CountryPolicy(
     country="ZZ",
+    locale="en-US",
+    currency="USD",
+    default_timezone="UTC",
     audience="global_informational",
     informational_content_allowed=True,
     commercial_outbound_allowed=False,
@@ -32,6 +40,8 @@ _UNKNOWN = CountryPolicy(
 )
 _CONFIG_DIR = Path(__file__).resolve().parents[2] / "config" / "countries"
 _ROUTE_MODES = frozenset({"contract_required", "informational_only"})
+_LOCALE_RE = re.compile(r"^[a-z]{2,3}(?:-[A-Z]{2}|-[A-Z][a-z]{3})?(?:-[A-Z]{2})?$")
+_CURRENCY_RE = re.compile(r"^[A-Z]{3}$")
 
 
 def _required_text(mapping: Mapping[str, object], key: str, *, max_length: int = 200) -> str:
@@ -58,6 +68,17 @@ def _parse_policy(payload: Mapping[str, object], source: Path) -> CountryPolicy:
     country = _required_text(payload, "country_code", max_length=2).upper()
     if len(country) != 2 or not country.isalpha():
         raise ValueError(f"invalid country_code in {source.name}")
+    locale = _required_text(payload, "locale", max_length=35)
+    if not _LOCALE_RE.fullmatch(locale):
+        raise ValueError(f"invalid BCP 47 locale in {source.name}")
+    currency = _required_text(payload, "currency", max_length=3).upper()
+    if not _CURRENCY_RE.fullmatch(currency):
+        raise ValueError(f"invalid ISO-style currency code in {source.name}")
+    default_timezone = _required_text(payload, "default_timezone", max_length=64)
+    try:
+        ZoneInfo(default_timezone)
+    except (ZoneInfoNotFoundError, ValueError) as exc:
+        raise ValueError(f"invalid IANA timezone in {source.name}") from exc
     enabled = payload.get("enabled")
     if not isinstance(enabled, bool):
         raise ValueError(f"country pack enabled must be boolean in {source.name}")
@@ -76,6 +97,9 @@ def _parse_policy(payload: Mapping[str, object], source: Path) -> CountryPolicy:
         raise ValueError(f"disabled country pack cannot enable commercial actions in {source.name}")
     return CountryPolicy(
         country=country,
+        locale=locale,
+        currency=currency,
+        default_timezone=default_timezone,
         audience=_required_text(policy, "audience", max_length=80),
         informational_content_allowed=_required_bool(policy, "informational_content_allowed"),
         commercial_outbound_allowed=commercial_outbound_allowed,
