@@ -43,7 +43,7 @@ class KalshiAdapter:
         if not ticker or len(ticker) > 200:
             raise ValueError("invalid Kalshi ticker")
         if depth < 1 or depth > 100:
-            raise ValueError("depth must be between 1 and 100")
+            raise ValueError("invalid Kalshi ticker")
         async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
             response = await client.get(
                 f"{self.base_url}/markets/{ticker}/orderbook",
@@ -73,6 +73,7 @@ class KalshiAdapter:
         close_time = item.get("close_time")
         closes_at = datetime.fromisoformat(close_time.replace("Z", "+00:00")) if close_time else None
         ticker = str(item.get("ticker") or item.get("id") or "")
+        series_ticker = str(item.get("series_ticker") or "").strip()
         title = str(item.get("title") or item.get("subtitle") or ticker)
         return NormalizedMarket(
             venue="kalshi",
@@ -88,6 +89,9 @@ class KalshiAdapter:
                 else None
             ),
             closes_at=closes_at,
-            source_url=f"https://kalshi.com/markets/{ticker}" if ticker else None,
+            # Kalshi's public documentation links the web UI by series ticker,
+            # while the Trade API uses the individual market ticker for contract
+            # endpoints. Never guess a UI slug from a contract ticker.
+            source_url=f"https://kalshi.com/markets/{series_ticker.lower()}" if series_ticker else None,
             raw=item,
         )
