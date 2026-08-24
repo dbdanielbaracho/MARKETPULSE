@@ -10,34 +10,35 @@ from pathlib import Path
 from typing import Any
 
 
+_PROVIDER_DEFAULTS = {
+    "enabled": True,
+    "commercial_verified": False,
+    "partner_id": "",
+    "affiliate_id": "",
+    "referral_code": "",
+    "tracking_parameter": "",
+    "tracking_value": "",
+    "compensation_model": "pending",
+    "compensation_rate": None,
+    "allowed_countries": [],
+    "blocked_countries": [],
+}
+
 DEFAULT_CONTROL_PLANE: dict[str, Any] = {
     "version": 1,
     "providers": {
-        "kalshi": {
-            "enabled": True,
-            "commercial_verified": False,
-            "partner_id": "",
-            "affiliate_id": "",
-            "referral_code": "",
-            "tracking_parameter": "",
-            "tracking_value": "",
-            "compensation_model": "pending",
-            "compensation_rate": None,
+        "kalshi_us": {
+            **_PROVIDER_DEFAULTS,
             "allowed_countries": ["US"],
-            "blocked_countries": [],
         },
-        "polymarket": {
-            "enabled": True,
-            "commercial_verified": False,
-            "partner_id": "",
-            "affiliate_id": "",
-            "referral_code": "",
-            "tracking_parameter": "",
-            "tracking_value": "",
-            "compensation_model": "pending",
-            "compensation_rate": None,
-            "allowed_countries": [],
+        "polymarket_intl": {
+            **_PROVIDER_DEFAULTS,
             "blocked_countries": ["BR", "US"],
+        },
+        "polymarket_us": {
+            **_PROVIDER_DEFAULTS,
+            "enabled": False,
+            "allowed_countries": ["US"],
         },
     },
     "acquisition": {
@@ -82,50 +83,66 @@ def _countries(value: object) -> list[str]:
     return result
 
 
+def _migrate_v1_provider_names(payload: Mapping[str, Any]) -> dict[str, Any]:
+    """Accept the first Control Plane shape and migrate it before validation."""
+    result = deepcopy(dict(payload))
+    providers = result.get("providers")
+    if not isinstance(providers, Mapping):
+        return result
+    converted = dict(providers)
+    if "kalshi" in converted and "kalshi_us" not in converted:
+        converted["kalshi_us"] = converted.pop("kalshi")
+    if "polymarket" in converted and "polymarket_intl" not in converted:
+        converted["polymarket_intl"] = converted.pop("polymarket")
+    result["providers"] = converted
+    return result
+
+
 def validate_control_plane(payload: Mapping[str, Any]) -> dict[str, Any]:
+    payload = _migrate_v1_provider_names(payload)
     if payload.get("version") != 1:
         raise ValueError("unsupported control-plane version")
     providers = payload.get("providers")
     if not isinstance(providers, Mapping):
         raise ValueError("providers must be an object")
     normalized = deepcopy(DEFAULT_CONTROL_PLANE)
-    for venue in ("kalshi", "polymarket"):
-        incoming = providers.get(venue)
+    for provider_key in normalized["providers"]:
+        incoming = providers.get(provider_key, normalized["providers"][provider_key])
         if not isinstance(incoming, Mapping):
-            raise ValueError(f"missing provider: {venue}")
+            raise ValueError(f"missing provider: {provider_key}")
         unknown = set(incoming) - _ALLOWED_PROVIDER_KEYS
         if unknown:
-            raise ValueError(f"unsupported {venue} settings: {', '.join(sorted(unknown))}")
-        target = normalized["providers"][venue]
+            raise ValueError(f"unsupported {provider_key} settings: {', '.join(sorted(unknown))}")
+        target = normalized["providers"][provider_key]
         for key in ("enabled", "commercial_verified"):
             if not isinstance(incoming.get(key), bool):
-                raise ValueError(f"{venue}.{key} must be boolean")
+                raise ValueError(f"{provider_key}.{key} must be boolean")
             target[key] = incoming[key]
         for key in ("partner_id", "affiliate_id", "referral_code", "tracking_parameter", "tracking_value"):
             value = incoming.get(key, "")
             if not isinstance(value, str) or len(value.strip()) > 250:
-                raise ValueError(f"{venue}.{key} must be bounded text")
+                raise ValueError(f"{provider_key}.{key} must be bounded text")
             target[key] = value.strip()
         model = incoming.get("compensation_model", "pending")
         if model not in _ALLOWED_MODELS:
-            raise ValueError(f"unsupported compensation model for {venue}")
+            raise ValueError(f"unsupported compensation model for {provider_key}")
         target["compensation_model"] = model
         rate = incoming.get("compensation_rate")
         if rate is not None:
             if isinstance(rate, bool) or not isinstance(rate, (int, float)) or rate < 0 or rate > 100:
-                raise ValueError(f"{venue}.compensation_rate must be between 0 and 100")
+                raise ValueError(f"{provider_key}.compensation_rate must be between 0 and 100")
             rate = float(rate)
         target["compensation_rate"] = rate
         target["allowed_countries"] = _countries(incoming.get("allowed_countries", []))
         target["blocked_countries"] = _countries(incoming.get("blocked_countries", []))
         if set(target["allowed_countries"]) & set(target["blocked_countries"]):
-            raise ValueError(f"{venue} country cannot be both allowed and blocked")
+            raise ValueError(f"{provider_key} country cannot be both allowed and blocked")
         if target["commercial_verified"] and not any(
             target[key] for key in ("partner_id", "affiliate_id", "referral_code")
         ):
-            raise ValueError(f"{venue} cannot be commercial_verified without a commercial identifier")
+            raise ValueError(f"{provider_key} cannot be commercial_verified without a commercial identifier")
         if bool(target["tracking_parameter"]) != bool(target["tracking_value"]):
-            raise ValueError(f"{venue} tracking parameter and value must be configured together")
+            raise ValueError(f"{provider_key} tracking parameter and value must be configured together")
 
     acquisition = payload.get("acquisition", DEFAULT_CONTROL_PLANE["acquisition"])
     if not isinstance(acquisition, Mapping) or not isinstance(acquisition.get("channels"), Mapping):
@@ -204,7 +221,7 @@ class ControlPlaneStore:
         value = json.loads(raw)
         if not isinstance(value, dict):
             raise ValueError("stored control plane must be an object")
-        return value
+        return validate_control_plane(value)
 
     def snapshot(self) -> dict[str, Any]:
         with self._connection() as connection:
