@@ -21,28 +21,61 @@ def _b64d(value: str) -> bytes:
     return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
 
 
+def _normalized_secret_env(name: str) -> str:
+    """Read a secret robustly from deployment UIs without exposing it.
+
+    Railway and similar dashboards normally store the raw value, but operators may
+    accidentally paste a value wrapped in matching quotes. We accept that common
+    configuration mistake while preserving all interior characters and symbols.
+    """
+    value = os.getenv(name, "")
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+        value = value[1:-1]
+    return value
+
+
 def admin_email() -> str:
     return os.getenv("MP_ADMIN_EMAIL", "admin@predibeacon.com").strip().casefold()
 
 
 def _admin_password() -> str:
-    # Preferred credential is a dedicated password. Legacy token fallback keeps
-    # existing production deployments operable until MP_ADMIN_PASSWORD is set.
-    return os.getenv("MP_ADMIN_PASSWORD", "").strip() or os.getenv("MP_ADMIN_TOKEN", "").strip()
+    password = _normalized_secret_env("MP_ADMIN_PASSWORD")
+    return password or _normalized_secret_env("MP_ADMIN_TOKEN")
 
 
 def _session_secret() -> bytes:
-    explicit = os.getenv("MP_ADMIN_SESSION_SECRET", "").strip()
+    explicit = _normalized_secret_env("MP_ADMIN_SESSION_SECRET")
     if len(explicit) >= 32:
         return explicit.encode("utf-8")
-    token = os.getenv("MP_ADMIN_TOKEN", "").strip()
+    token = _normalized_secret_env("MP_ADMIN_TOKEN")
     if len(token) >= 32:
         return hashlib.sha256(("predibeacon-admin-session-v1:" + token).encode("utf-8")).digest()
+    # When a dedicated admin password exists but no legacy token/session secret does,
+    # derive a separate session-signing key. This keeps password-only deployments
+    # functional without requiring a second secret to be configured by the operator.
+    password = _normalized_secret_env("MP_ADMIN_PASSWORD")
+    if len(password) >= 12:
+        return hashlib.sha256(("predibeacon-admin-session-v1:password:" + password).encode("utf-8")).digest()
     return b""
 
 
+def admin_config_status() -> dict[str, object]:
+    password = _normalized_secret_env("MP_ADMIN_PASSWORD")
+    legacy = _normalized_secret_env("MP_ADMIN_TOKEN")
+    session_secret = _session_secret()
+    return {
+        "password_configured": bool(password),
+        "password_valid_length": len(password) >= 12,
+        "legacy_token_configured": bool(legacy),
+        "session_signing_configured": len(session_secret) >= 32,
+        "two_factor_enabled": two_factor_enabled(),
+        "configured_email": admin_email(),
+    }
+
+
 def two_factor_enabled() -> bool:
-    return bool(os.getenv("MP_ADMIN_TOTP_SECRET", "").strip())
+    return bool(_normalized_secret_env("MP_ADMIN_TOTP_SECRET"))
 
 
 def _totp(secret: str, counter: int) -> str:
@@ -55,7 +88,7 @@ def _totp(secret: str, counter: int) -> str:
 
 
 def verify_totp(code: str | None, now: int | None = None) -> bool:
-    secret = os.getenv("MP_ADMIN_TOTP_SECRET", "").strip()
+    secret = _normalized_secret_env("MP_ADMIN_TOTP_SECRET")
     if not secret:
         return True
     candidate = (code or "").strip()
