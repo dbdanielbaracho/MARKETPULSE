@@ -43,7 +43,7 @@ class KalshiAdapter:
         if not ticker or len(ticker) > 200:
             raise ValueError("invalid Kalshi ticker")
         if depth < 1 or depth > 100:
-            raise ValueError("invalid Kalshi ticker")
+            raise ValueError("depth must be between 1 and 100")
         async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
             response = await client.get(
                 f"{self.base_url}/markets/{ticker}/orderbook",
