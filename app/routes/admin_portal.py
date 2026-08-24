@@ -54,6 +54,11 @@ def admin_editorial_page() -> HTMLResponse:
     return _secure_html("admin.html")
 
 
+@router.get("/admin/insights", response_class=HTMLResponse, include_in_schema=False)
+def admin_insights_page() -> HTMLResponse:
+    return _secure_html("admin_insights.html")
+
+
 @router.get("/api/v1/admin/session")
 def admin_session_status(request: Request) -> dict[str, object]:
     session = read_session(request.cookies.get(COOKIE_NAME))
