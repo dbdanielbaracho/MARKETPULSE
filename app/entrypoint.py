@@ -12,6 +12,7 @@ from app.middleware.traffic import register_traffic_middleware
 from app.routes.admin_creator_agreements import router as admin_creator_agreements_router
 from app.routes.admin_launch_readiness import router as admin_launch_readiness_router
 from app.routes.admin_traffic import router as admin_traffic_router
+from app.routes.commercial_api_billing import router as commercial_api_billing_router
 from app.routes.commercial_intelligence import router as commercial_intelligence_router
 from app.routes.contract_verification import router as contract_verification_router
 from app.routes.creator_self_service import router as creator_self_service_router
@@ -32,6 +33,7 @@ from app.routes.web_push import router as web_push_router
 app.include_router(admin_creator_agreements_router)
 app.include_router(admin_launch_readiness_router)
 app.include_router(admin_traffic_router)
+app.include_router(commercial_api_billing_router)
 app.include_router(commercial_intelligence_router)
 app.include_router(contract_verification_router)
 app.include_router(creator_self_service_router)
