@@ -32,7 +32,7 @@ class ApiBillingConfig:
     @classmethod
     def from_env(cls) -> "ApiBillingConfig":
         secret = os.getenv("MP_STRIPE_SECRET_KEY", "").strip()
-        webhook = os.getenv("MP_STRIPE_WEBHOOK_SECRET", "").strip()
+        webhook = os.getenv("MP_STRIPE_API_WEBHOOK_SECRET", "").strip()
         origin = os.getenv("MP_PUBLIC_BASE_URL", "https://predibeacon.com").strip().rstrip("/")
         if not secret or not webhook:
             raise ApiBillingConfigurationError("Commercial API Stripe billing is not configured")
