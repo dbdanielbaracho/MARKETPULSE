@@ -25,6 +25,10 @@ def _ranked_market(market: core.DiscoveryMarket, *, now: datetime) -> RankedDisc
     )
 
 
+def _is_open(market: core.DiscoveryMarket, *, now: datetime) -> bool:
+    return market.closes_at is None or market.closes_at > now
+
+
 @router.get("/markets/relevant", response_model=list[RankedDiscoveryMarket])
 def relevant_markets(
     response: Response,
@@ -33,10 +37,10 @@ def relevant_markets(
     q: str | None = Query(default=None, max_length=120),
     limit: int = Query(default=50, ge=1, le=100),
 ) -> list[RankedDiscoveryMarket]:
-    """Rank what deserves attention now; the score is not a forecast or expected return."""
+    """Rank open markets by relevance; the score is not a forecast or expected return."""
     response.headers["Cache-Control"] = "public, max-age=30, stale-while-revalidate=30"
     now = datetime.now(timezone.utc)
-    items = list(core._DISCOVERY)
+    items = [item for item in core._DISCOVERY if _is_open(item, now=now)]
     if category:
         items = [item for item in items if (item.category or "").casefold() == category.casefold()]
     if venue:
@@ -57,27 +61,4 @@ def relevant_markets(
         seen.add(identity)
         deduplicated.append(item)
 
-    if venue is not None:
-        return deduplicated[:limit]
-
-    remaining = list(deduplicated)
-    balanced: list[RankedDiscoveryMarket] = []
-    last_provider: str | None = None
-    streak = 0
-    while remaining and len(balanced) < limit:
-        selected_index = 0
-        leader = remaining[0]
-        if last_provider == leader.venue and streak >= 3:
-            alternative_index = next((index for index, item in enumerate(remaining) if item.venue != leader.venue), None)
-            if alternative_index is not None:
-                alternative = remaining[alternative_index]
-                if alternative.relevance_score >= leader.relevance_score - 8:
-                    selected_index = alternative_index
-        selected = remaining.pop(selected_index)
-        balanced.append(selected)
-        if selected.venue == last_provider:
-            streak += 1
-        else:
-            last_provider = selected.venue
-            streak = 1
-    return balanced
+    return deduplicated[:limit]
