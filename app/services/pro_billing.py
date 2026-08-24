@@ -82,31 +82,35 @@ def create_checkout_session(
     account_ref: str,
     customer_email: str,
     config: BillingConfig,
+    stripe_customer_id: str | None = None,
     gateway: StripeGateway | None = None,
 ) -> BillingRedirect:
-    """Create a hosted subscription checkout without exposing Stripe identifiers publicly.
-
-    `account_ref` must be an internal, authenticated PrediBeacon account identifier supplied
-    by the future account boundary. The adapter deliberately does not create public routes
-    that accept arbitrary account IDs.
-    """
+    """Create a hosted subscription checkout from authenticated server-side identity."""
     account_ref = account_ref.strip()
     customer_email = customer_email.strip()
     if not account_ref:
         raise ValueError("account_ref is required")
     if "@" not in customer_email or len(customer_email) > 254:
         raise ValueError("valid customer_email is required")
+    if stripe_customer_id is not None:
+        stripe_customer_id = stripe_customer_id.strip()
+        if not stripe_customer_id.startswith("cus_") or len(stripe_customer_id) > 255:
+            raise ValueError("invalid Stripe customer id")
 
     gateway = gateway or OfficialStripeGateway(config.secret_key)
-    session = gateway.create_checkout(
-        mode="subscription",
-        line_items=[{"price": config.pro_price_id, "quantity": 1}],
-        customer_email=customer_email,
-        client_reference_id=account_ref,
-        success_url=f"{config.public_base_url}/pro/success?session_id={{CHECKOUT_SESSION_ID}}",
-        cancel_url=f"{config.public_base_url}/pro",
-        allow_promotion_codes=False,
-    )
+    params = {
+        "mode": "subscription",
+        "line_items": [{"price": config.pro_price_id, "quantity": 1}],
+        "client_reference_id": account_ref,
+        "success_url": f"{config.public_base_url}/pro/success?session_id={{CHECKOUT_SESSION_ID}}",
+        "cancel_url": f"{config.public_base_url}/pro",
+        "allow_promotion_codes": False,
+    }
+    if stripe_customer_id is None:
+        params["customer_email"] = customer_email
+    else:
+        params["customer"] = stripe_customer_id
+    session = gateway.create_checkout(**params)
     url = _https_provider_url(str(session.url), expected_host_suffix="stripe.com")
     return BillingRedirect(url=url, provider_session_id=str(session.id))
 
