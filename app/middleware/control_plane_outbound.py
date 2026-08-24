@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from secrets import token_urlsafe
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit
 from uuid import uuid4
 
 from fastapi import Request
@@ -27,8 +27,51 @@ def _validated_destination(market, venue: str) -> tuple[str | None, str]:
     return market.source_url, "ok"
 
 
+def _route_payload(core, market, request: Request) -> dict[str, object]:
+    venue = market.venue
+    destination, destination_state = _validated_destination(market, venue)
+    provider = effective_provider(core._database_path(), venue)
+    country = request_country(request.headers)
+    if destination is None:
+        return {
+            "market_id": market.canonical_id,
+            "venue": venue,
+            "available": False,
+            "mode": "unavailable",
+            "outbound_url": None,
+            "reason": destination_state,
+        }
+    if not provider.enabled:
+        return {
+            "market_id": market.canonical_id,
+            "venue": venue,
+            "available": False,
+            "mode": "unavailable",
+            "outbound_url": None,
+            "reason": "provider_disabled",
+        }
+    if country is not None and not provider.country_allowed(country):
+        return {
+            "market_id": market.canonical_id,
+            "venue": venue,
+            "available": False,
+            "mode": "unavailable",
+            "outbound_url": None,
+            "reason": "jurisdiction_unavailable",
+        }
+    mode = "partner" if provider.commercial_verified and provider.attribution_id else "organic"
+    return {
+        "market_id": market.canonical_id,
+        "venue": venue,
+        "available": True,
+        "mode": mode,
+        "outbound_url": f"/out/{venue}?{urlencode({'market_id': market.canonical_id})}",
+        "reason": "verified_partner_route" if mode == "partner" else "verified_organic_route",
+    }
+
+
 def register_control_plane_outbound_middleware(app) -> None:
-    """Make published admin settings authoritative for public provider routing.
+    """Make published admin settings authoritative for route discovery and outbound traffic.
 
     Jurisdiction blocks are enforced whenever the trusted deployment edge supplies a
     country header. Unknown location preserves the pre-control-plane organic route;
@@ -38,14 +81,24 @@ def register_control_plane_outbound_middleware(app) -> None:
 
     @app.middleware("http")
     async def control_plane_outbound(request: Request, call_next):
+        import app.main as core
+
+        if request.url.path == "/api/v1/market/route":
+            market_id = (request.query_params.get("market_id") or "").strip()
+            if not market_id:
+                return JSONResponse({"detail": "market_id is required"}, status_code=422)
+            try:
+                market = core._market_by_id(market_id)
+            except Exception:
+                return JSONResponse({"detail": "market not found"}, status_code=404)
+            return JSONResponse(_route_payload(core, market, request), headers={"Cache-Control": "no-store"})
+
         path = request.url.path
         if not path.startswith("/out/"):
             return await call_next(request)
         venue = path.removeprefix("/out/").strip("/")
         if venue not in _ALLOWED_HOSTS:
             return await call_next(request)
-
-        import app.main as core
 
         market_id = (request.query_params.get("market_id") or "").strip()
         if not market_id:
