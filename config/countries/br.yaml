@@ -2,6 +2,7 @@ version: 1
 country_code: BR
 locale: pt-BR
 currency: BRL
+default_timezone: America/Sao_Paulo
 enabled: false
 features:
   discovery: false

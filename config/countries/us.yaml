@@ -2,6 +2,7 @@ version: 1
 country_code: US
 locale: en-US
 currency: USD
+default_timezone: America/New_York
 enabled: true
 features:
   discovery: true
