@@ -25,6 +25,7 @@ from app.routes.public_pro import router as public_pro_router
 from app.routes.public_relevance import router as public_relevance_router
 from app.routes.public_trade_activity import router as public_trade_activity_router
 from app.routes.public_venue_conditions import router as public_venue_conditions_router
+from app.routes.web_push import router as web_push_router
 
 
 app.include_router(admin_creator_agreements_router)
@@ -43,6 +44,7 @@ app.include_router(public_pro_router)
 app.include_router(public_relevance_router)
 app.include_router(public_trade_activity_router)
 app.include_router(public_venue_conditions_router)
+app.include_router(web_push_router)
 register_market_intelligence_middleware(app)
 register_alerts_middleware(app)
 register_home_platform_visibility_middleware(app)

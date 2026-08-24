@@ -4,6 +4,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import Response
 
 from app.services.alert_page_enhancements import enhance_alerts_template
+from app.services.push_alert_page import enhance_push_alerts_template
 
 
 def register_alerts_middleware(app: FastAPI) -> None:
@@ -21,8 +22,10 @@ def register_alerts_middleware(app: FastAPI) -> None:
         headers = {key: value for key, value in response.headers.items() if key.lower() != "content-length"}
         if body is None:
             return Response(content=raw, status_code=response.status_code, headers=headers, media_type=response.media_type)
+        enhanced = enhance_alerts_template(body)
+        enhanced = enhance_push_alerts_template(enhanced)
         return Response(
-            content=enhance_alerts_template(body),
+            content=enhanced,
             status_code=response.status_code,
             headers=headers,
             media_type=response.media_type,
