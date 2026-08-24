@@ -10,6 +10,7 @@ from app.services.public_locale import DEFAULT_LOCALE, localize_public_html, nor
 from app.services.public_locale_extended import extend_public_translation
 from app.services.public_locale_trust import translate_trust_page
 from app.services.public_locale_content import translate_content_shell
+from app.services.trust_locale_policy import trust_presentation_locale
 
 
 PUBLIC_LOCALE_PATHS = {
@@ -128,10 +129,11 @@ def register_public_locale_middleware(app: FastAPI) -> None:
                 media_type=response.media_type,
             )
 
-        locale = _resolve_locale(
+        requested_locale = _resolve_locale(
             request.cookies.get("predibeacon_lang"),
             request.headers.get("accept-language"),
         )
+        locale = trust_presentation_locale(path, requested_locale)
         localized = localize_public_html(path, body, locale)
         localized = extend_public_translation(path, localized, locale)
         localized = translate_trust_page(path, localized, locale)
@@ -140,6 +142,8 @@ def register_public_locale_middleware(app: FastAPI) -> None:
         localized = _preserve_selector_query(localized, request)
         headers = {key: value for key, value in response.headers.items() if key.lower() != "content-length"}
         headers["Content-Language"] = locale
+        if locale != requested_locale:
+            headers["X-PrediBeacon-Language-Fallback"] = "canonical-en"
         vary = headers.get("Vary", "")
         vary_values = {item.strip() for item in vary.split(",") if item.strip()}
         vary_values.add("Cookie")
