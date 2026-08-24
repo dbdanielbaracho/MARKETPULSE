@@ -2,6 +2,7 @@ version: 1
 country_code: GB
 locale: en-GB
 currency: GBP
+default_timezone: Europe/London
 enabled: false
 features:
   discovery: false
