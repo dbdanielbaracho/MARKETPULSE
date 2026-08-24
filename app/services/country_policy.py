@@ -27,6 +27,16 @@ _POLICIES: Mapping[str, CountryPolicy] = {
         route_mode="contract_required",
         reason="partner_contract_and_platform_ad_authorization_pending",
     ),
+    "GB": CountryPolicy(
+        country="GB",
+        audience="uk_informational",
+        informational_content_allowed=True,
+        commercial_outbound_allowed=False,
+        paid_social_allowed=False,
+        minimum_age=18,
+        route_mode="informational_only",
+        reason="country_pack_disabled_and_commercial_route_not_authorized",
+    ),
     "BR": CountryPolicy(
         country="BR",
         audience="brazil_informational",

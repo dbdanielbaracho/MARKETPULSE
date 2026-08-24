@@ -12,6 +12,18 @@ def test_us_policy_is_informational_until_contract_and_ad_authorization():
     assert policy.route_mode == "contract_required"
 
 
+def test_uk_policy_is_present_but_commercially_fail_closed():
+    policy = resolve_country_policy("gb")
+
+    assert policy.country == "GB"
+    assert policy.audience == "uk_informational"
+    assert policy.informational_content_allowed is True
+    assert policy.commercial_outbound_allowed is False
+    assert policy.paid_social_allowed is False
+    assert policy.route_mode == "informational_only"
+    assert policy.reason == "country_pack_disabled_and_commercial_route_not_authorized"
+
+
 def test_brazil_policy_is_informational_only():
     policy = resolve_country_policy("BR")
 
@@ -48,6 +60,15 @@ def test_commercial_action_requires_age_country_contract_and_platform_authorizat
     )
     assert allowed is False
     assert reason == "partner_contract_and_platform_ad_authorization_pending"
+
+    allowed, reason = commercial_action_allowed(
+        country="GB",
+        age=25,
+        partner_contract_verified=True,
+        platform_authorization_verified=True,
+    )
+    assert allowed is False
+    assert reason == "country_pack_disabled_and_commercial_route_not_authorized"
 
     allowed, reason = commercial_action_allowed(
         country="BR",
