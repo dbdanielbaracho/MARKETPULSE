@@ -63,11 +63,16 @@ class CreatorAgreementStore:
         )
 
     @staticmethod
-    def _validate(creator_id: str, agreement_id: str, share_basis_points: int) -> tuple[str, str, int]:
-        creator_id = creator_id.strip()
-        agreement_id = agreement_id.strip()
-        if not _CREATOR_ID.fullmatch(creator_id):
+    def _creator_id(value: str) -> str:
+        value = value.strip()
+        if not _CREATOR_ID.fullmatch(value):
             raise ValueError("invalid creator id")
+        return value
+
+    @staticmethod
+    def _validate(creator_id: str, agreement_id: str, share_basis_points: int) -> tuple[str, str, int]:
+        creator_id = CreatorAgreementStore._creator_id(creator_id)
+        agreement_id = agreement_id.strip()
         if not _AGREEMENT_ID.fullmatch(agreement_id):
             raise ValueError("invalid agreement id")
         if isinstance(share_basis_points, bool) or not isinstance(share_basis_points, int):
@@ -121,10 +126,40 @@ class CreatorAgreementStore:
             ).fetchone()
         return self._item(row)
 
+    def for_creator(self, creator_id: str) -> CreatorAgreement | None:
+        creator_id = self._creator_id(creator_id)
+        with self._connection() as connection:
+            row = connection.execute(
+                "SELECT * FROM creator_agreements WHERE creator_id=?", (creator_id,)
+            ).fetchone()
+        return self._item(row) if row else None
+
+    def approve(self, creator_id: str, agreement_id: str) -> CreatorAgreement:
+        creator_id = self._creator_id(creator_id)
+        agreement_id = agreement_id.strip()
+        if not _AGREEMENT_ID.fullmatch(agreement_id):
+            raise ValueError("invalid agreement id")
+        now = datetime.now(timezone.utc)
+        with self._connection() as connection:
+            row = connection.execute(
+                "SELECT * FROM creator_agreements WHERE creator_id=?", (creator_id,)
+            ).fetchone()
+            if row is None:
+                raise KeyError("creator agreement not found")
+            if row["agreement_id"] != agreement_id:
+                raise ValueError("agreement id does not match creator configuration")
+            if not bool(row["approved"]):
+                connection.execute(
+                    "UPDATE creator_agreements SET approved=1, approved_at=?, updated_at=? WHERE creator_id=?",
+                    (now.isoformat(), now.isoformat(), creator_id),
+                )
+                row = connection.execute(
+                    "SELECT * FROM creator_agreements WHERE creator_id=?", (creator_id,)
+                ).fetchone()
+        return self._item(row)
+
     def approved_for_creator(self, creator_id: str) -> CreatorAgreement | None:
-        creator_id = creator_id.strip()
-        if not _CREATOR_ID.fullmatch(creator_id):
-            raise ValueError("invalid creator id")
+        creator_id = self._creator_id(creator_id)
         with self._connection() as connection:
             row = connection.execute(
                 "SELECT * FROM creator_agreements WHERE creator_id=? AND approved=1",
@@ -133,9 +168,7 @@ class CreatorAgreementStore:
         return self._item(row) if row else None
 
     def revoke(self, creator_id: str) -> None:
-        creator_id = creator_id.strip()
-        if not _CREATOR_ID.fullmatch(creator_id):
-            raise ValueError("invalid creator id")
+        creator_id = self._creator_id(creator_id)
         now = datetime.now(timezone.utc).isoformat()
         with self._connection() as connection:
             connection.execute(
