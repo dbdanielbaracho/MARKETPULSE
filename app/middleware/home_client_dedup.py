@@ -2,10 +2,17 @@ from __future__ import annotations
 
 import json
 import re
+from collections import Counter
 from datetime import datetime, timedelta, timezone
 
 from fastapi import FastAPI, Request
 from starlette.responses import Response
+
+MIN_HOMEPAGE_RELEVANCE = 5.0
+MIN_HOMEPAGE_VOLUME_USD = 0.01
+MIN_TIME_TO_CLOSE = timedelta(hours=1)
+MAX_PER_SUBJECT_PER_VENUE = 2
+CURATION_VERSION = "quality-v2"
 
 _THRESHOLD_PATTERNS = (
     re.compile(r"\b(above|below|over|under|more\s+than|less\s+than|at\s+least|at\s+most)\s+(?:us\$|\$|€|£)?\s*\d[\d,]*(?:\.\d+)?", re.I),
@@ -14,14 +21,28 @@ _THRESHOLD_PATTERNS = (
     re.compile(r"\b(?:over|under|more\s+than|less\s+than|at\s+least|at\s+most)\s+\d+(?:\.\d+)?\s*(?=(?:runs?|goals?|points?|yards?|sets?|games?|rounds?)\b)", re.I),
     re.compile(r"\b\d[\d,]*(?:\.\d+)?\s*(?=(?:%|°[cf]|degrees?\b|ounces?\b|oz\b|barrels?\b|bbl\b))", re.I),
 )
+_SUBJECT_SUFFIX = re.compile(
+    r"\s*:\s*(?:\d+(?:\.\d+)?\+?\s*)?(?:points?|assists?|rebounds?|threes?|three-pointers?|hits?|runs?|rbis?|goals?|stolen\s+bases?|strikeouts?|saves?|shots?|tackles?|receptions?|yards?)\??$",
+    re.I,
+)
+
+
+def _normalized_text(value: object) -> str:
+    return " ".join(str(value or "").casefold().split())
 
 
 def _family_title(title: str) -> str:
-    value = " ".join(str(title or "").casefold().split())
+    value = _normalized_text(title)
     value = _THRESHOLD_PATTERNS[0].sub(r"\1 <threshold>", value)
     for pattern in _THRESHOLD_PATTERNS[1:]:
         value = pattern.sub("<threshold> ", value)
     return " ".join(value.split())
+
+
+def _subject_title(title: str) -> str:
+    value = _normalized_text(title)
+    stripped = _SUBJECT_SUFFIX.sub("", value).strip()
+    return stripped or value
 
 
 def _parse_closes_at(value: object) -> datetime | None:
@@ -36,33 +57,71 @@ def _parse_closes_at(value: object) -> datetime | None:
     return parsed.astimezone(timezone.utc)
 
 
+def _number(value: object) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    number = float(value)
+    if number != number or number in {float("inf"), float("-inf")}:
+        return None
+    return number
+
+
+def _is_quality_market(item: dict[str, object], *, now: datetime) -> bool:
+    title = _normalized_text(item.get("title"))
+    venue = _normalized_text(item.get("venue"))
+    canonical_id = _normalized_text(item.get("canonical_id"))
+    if not title or venue not in {"kalshi", "polymarket"} or not canonical_id:
+        return False
+
+    volume = _number(item.get("volume_usd"))
+    relevance = _number(item.get("trend_score"))
+    if volume is None or volume < MIN_HOMEPAGE_VOLUME_USD:
+        return False
+    if relevance is None or relevance < MIN_HOMEPAGE_RELEVANCE:
+        return False
+
+    probability = item.get("probability")
+    if probability is not None:
+        parsed_probability = _number(probability)
+        if parsed_probability is None or not 0 <= parsed_probability <= 1:
+            return False
+
+    closes_at = _parse_closes_at(item.get("closes_at"))
+    if closes_at is not None and closes_at <= now + MIN_TIME_TO_CLOSE:
+        return False
+    return True
+
+
 def _curate_market_payload(items: list[dict[str, object]], *, now: datetime | None = None) -> list[dict[str, object]]:
-    """Fail closed on homepage noise before the browser receives market cards."""
+    """Fail closed on homepage noise before the browser receives market cards.
+
+    The public discovery feed is intentionally stricter than the canonical market
+    inventory. Unknown quality metrics are rejected, threshold ladders collapse to
+    one representative per venue, and one subject cannot monopolize the homepage.
+    """
     current = now or datetime.now(timezone.utc)
-    cutoff = current + timedelta(hours=1)
     curated: list[dict[str, object]] = []
     seen_exact: set[tuple[str, str]] = set()
     seen_family: set[tuple[str, str]] = set()
+    subject_counts: Counter[tuple[str, str]] = Counter()
 
     for item in items:
-        volume = item.get("volume_usd")
-        relevance = item.get("trend_score")
-        if isinstance(volume, (int, float)) and volume <= 0:
-            continue
-        if isinstance(relevance, (int, float)) and relevance <= 0:
-            continue
-        closes_at = _parse_closes_at(item.get("closes_at"))
-        if closes_at is not None and closes_at <= cutoff:
+        if not _is_quality_market(item, now=current):
             continue
 
-        venue = str(item.get("venue") or "").casefold()
-        title = " ".join(str(item.get("title") or "").casefold().split())
+        venue = _normalized_text(item.get("venue"))
+        title = _normalized_text(item.get("title"))
         exact = (venue, title)
         family = (venue, _family_title(title))
+        subject = (venue, _subject_title(title))
         if exact in seen_exact or family in seen_family:
             continue
+        if subject_counts[subject] >= MAX_PER_SUBJECT_PER_VENUE:
+            continue
+
         seen_exact.add(exact)
         seen_family.add(family)
+        subject_counts[subject] += 1
         curated.append(item)
 
     return curated
@@ -107,7 +166,7 @@ _SCRIPT = r'''<script>
   const closesImmediately = (card) => {
     const text = factValue(card, ['closes in', 'fecha em', 'closes']).toLowerCase();
     if (!text) return false;
-    return /\b0\s*(?:h|hour|hours|hr|hrs|hora|horas)\b/.test(text);
+    return /\b(?:0|1)\s*(?:h|hour|hours|hr|hrs|hora|horas)\b/.test(text);
   };
 
   const dedup = () => {
@@ -125,7 +184,7 @@ _SCRIPT = r'''<script>
       const family = `${venue}|${normalize(title)}`;
       const volume = numericVolume(card);
       const relevance = numericRelevance(card);
-      const hidden = (volume !== null && volume <= 0) || (relevance !== null && relevance <= 0) || closesImmediately(card) || seenExact.has(exact) || seenFamily.has(family);
+      const hidden = volume === null || volume <= 0 || relevance === null || relevance < 5 || closesImmediately(card) || seenExact.has(exact) || seenFamily.has(family);
       if (card.hidden !== hidden) card.hidden = hidden;
       if (!hidden) {
         seenExact.add(exact);
@@ -179,8 +238,12 @@ def register_home_client_dedup_middleware(app: FastAPI) -> None:
             try:
                 payload = json.loads(raw)
                 if isinstance(payload, list) and all(isinstance(item, dict) for item in payload):
+                    input_count = len(payload)
                     curated = _curate_market_payload(payload)
                     raw = json.dumps(curated, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+                    headers["X-PrediBeacon-Curation"] = CURATION_VERSION
+                    headers["X-PrediBeacon-Curation-Input"] = str(input_count)
+                    headers["X-PrediBeacon-Curation-Output"] = str(len(curated))
             except (UnicodeDecodeError, json.JSONDecodeError):
                 pass
             return Response(content=raw, status_code=response.status_code, headers=headers, media_type=response.media_type)
