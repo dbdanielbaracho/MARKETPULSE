@@ -46,6 +46,7 @@ jobs:
           pytest -q browser_e2e/test_production_smoke.py
           pytest -q browser_e2e/test_production_mobile.py
           pytest -q browser_e2e/test_production_outbound.py
+          pytest -q browser_e2e/test_production_homepage_quality.py
       - name: Publish production smoke commit status
         if: always()
         env:
