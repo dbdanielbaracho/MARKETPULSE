@@ -119,10 +119,58 @@ _HOME_SCRIPT = r'''<script id="predibeacon-home-platform-visibility-script">
 </script>'''
 
 
+# The base homepage originally allowed overlapping discovery fetches to resolve in
+# arbitrary order. A slow response from an old filter could therefore overwrite a
+# newer user choice. Keep the original render fragment intact enough for the
+# fail-closed curation middleware to rewrite it, while making request ownership
+# explicit and aborting stale work.
+_LOAD_DECLARATION = "let category='';"
+_LOAD_DECLARATION_SAFE = "let category='',discoveryLoadSeq=0,discoveryController=null;"
+_LOAD_START = "async function load(){state.hidden=false;grid.innerHTML='';"
+_LOAD_START_SAFE = (
+    "async function load(){const seq=++discoveryLoadSeq;"
+    "if(discoveryController)discoveryController.abort();"
+    "discoveryController=new AbortController();"
+    "const signal=discoveryController.signal;"
+    "state.hidden=false;state.className='state';state.textContent='Loading market data…';"
+    "count.textContent='Loading…';grid.innerHTML='';"
+)
+_LOAD_FETCH = "const r=await fetch('/api/v1/markets?'+q);if(!r.ok)throw new Error();const data=await r.json();grid.innerHTML=data.map(card).join('');"
+_LOAD_FETCH_SAFE = (
+    "const r=await fetch('/api/v1/markets?'+q,{signal});"
+    "if(seq!==discoveryLoadSeq)return;"
+    "if(!r.ok)throw new Error();"
+    "const data=await r.json();"
+    "if(seq!==discoveryLoadSeq)return;"
+    "grid.innerHTML=data.map(card).join('');"
+)
+_LOAD_CATCH = "}catch{count.textContent='Unavailable';state.className='error';state.textContent='Market discovery is temporarily unavailable. PrediBeacon will not invent replacement data.'}}"
+_LOAD_CATCH_SAFE = (
+    "}catch(error){if(seq!==discoveryLoadSeq||error?.name==='AbortError')return;"
+    "count.textContent='Unavailable';state.className='error';"
+    "state.textContent='Market discovery is temporarily unavailable. PrediBeacon will not invent replacement data.'}}"
+)
+
+
+def _serialize_discovery_loads(html: str) -> str:
+    """Make the latest homepage interaction the only response allowed to render."""
+    if "discoveryLoadSeq" in html:
+        return html
+    required = (_LOAD_DECLARATION, _LOAD_START, _LOAD_FETCH, _LOAD_CATCH)
+    if not all(fragment in html for fragment in required):
+        return html
+    out = html.replace(_LOAD_DECLARATION, _LOAD_DECLARATION_SAFE, 1)
+    out = out.replace(_LOAD_START, _LOAD_START_SAFE, 1)
+    out = out.replace(_LOAD_FETCH, _LOAD_FETCH_SAFE, 1)
+    out = out.replace(_LOAD_CATCH, _LOAD_CATCH_SAFE, 1)
+    return out
+
+
 def enhance_home_template(html: str) -> str:
     """Apresenta ranking e disponibilidade de plataformas nativamente em português."""
     enhanced = html.replace('<html lang="en">', '<html lang="pt-BR">', 1)
     enhanced = enhanced.replace('>Briefs</a>', '>Resumos</a>', 1)
+    enhanced = _serialize_discovery_loads(enhanced)
     if 'id="predibeacon-home-platform-visibility-script"' in enhanced:
         return enhanced
     if "</head>" in enhanced:

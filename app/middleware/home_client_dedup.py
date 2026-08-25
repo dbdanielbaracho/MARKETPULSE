@@ -13,7 +13,7 @@ MIN_HOMEPAGE_VOLUME_USD = 0.01
 MIN_TIME_TO_CLOSE = timedelta(hours=1)
 MAX_PER_SUBJECT_PER_VENUE = 2
 CURATION_VERSION = "quality-v3"
-RENDER_CURATION_VERSION = "prerender-v1"
+RENDER_CURATION_VERSION = "prerender-v2"
 
 _THRESHOLD_PATTERNS = (
     re.compile(r"\b(above|below|over|under|more\s+than|less\s+than|at\s+least|at\s+most)\s+(?:us\$|\$|€|£)?\s*\d[\d,]*(?:\.\d+)?", re.I),
@@ -27,9 +27,17 @@ _SUBJECT_SUFFIX = re.compile(
     re.I,
 )
 
-_RENDER_NEEDLE = "const data=await r.json();grid.innerHTML=data.map(card).join('');"
+# home_page_enhancements adds the sequence guard. This middleware owns the
+# fail-closed data curation that must still happen before any DOM render.
+_RENDER_NEEDLE = (
+    "const data=await r.json();"
+    "if(seq!==discoveryLoadSeq)return;"
+    "grid.innerHTML=data.map(card).join('');"
+)
 _RENDER_REPLACEMENT = (
-    "const rawData=await r.json(),data=window.PrediBeaconHomepageCurate(rawData);"
+    "const rawData=await r.json();"
+    "if(seq!==discoveryLoadSeq)return;"
+    "const data=window.PrediBeaconHomepageCurate(rawData);"
     "grid.innerHTML=data.map(card).join('');"
 )
 
@@ -129,7 +137,7 @@ def _curate_market_payload(items: list[dict[str, object]], *, now: datetime | No
     return curated
 
 
-_SCRIPT = r'''<script data-predibeacon-render-curation="prerender-v1">
+_SCRIPT = r'''<script data-predibeacon-render-curation="prerender-v2">
 (() => {
   const text = (value) => String(value || '').toLowerCase().replace(/\s+/g, ' ').trim();
   const family = (title) => {
@@ -180,18 +188,35 @@ _SCRIPT = r'''<script data-predibeacon-render-curation="prerender-v1">
     return out;
   };
 
-  // Defense in depth only. Primary enforcement happens before grid.innerHTML via
-  // PrediBeaconHomepageCurate. This catches future DOM writers that bypass load().
+  // Defense in depth only. Primary enforcement happens before grid.innerHTML.
+  // If a future DOM writer bypasses the primary gate, keep count and empty-state
+  // text consistent with what a user can actually see.
   const auditDom = () => {
     const grid = document.querySelector('#grid');
     if (!grid) return;
+    const cards = [...grid.querySelectorAll('.card')];
     const seen = new Set();
-    for (const card of grid.querySelectorAll('.card')) {
+    for (const card of cards) {
       const title = card.querySelector('h3')?.textContent || '';
       const venue = card.querySelector('.venue-badge')?.textContent?.trim().toLowerCase() || '';
       const key = venue + '|' + family(title);
       if (seen.has(key)) card.hidden = true;
       else if (!card.hidden) seen.add(key);
+    }
+    const visible = cards.filter(card => !card.hidden).length;
+    if (cards.length && visible !== cards.length) {
+      const count = document.querySelector('#count');
+      if (count) count.textContent = visible + (visible === 1 ? ' market' : ' markets');
+      const state = document.querySelector('#state');
+      if (state) {
+        state.hidden = visible > 0;
+        if (!visible) {
+          const pt = (document.documentElement.lang || '').toLowerCase().startsWith('pt');
+          state.textContent = pt
+            ? 'Nenhum mercado elegível corresponde a estes filtros.'
+            : 'No quality-eligible markets match these filters.';
+        }
+      }
     }
   };
   const grid = document.querySelector('#grid');

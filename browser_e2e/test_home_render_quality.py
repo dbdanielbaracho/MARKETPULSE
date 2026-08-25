@@ -105,8 +105,8 @@ def test_uncurated_api_payload_can_never_be_observed_as_uncurated_dom():
         try:
             response = page.goto(base + "/", wait_until="domcontentloaded")
             assert response is not None and response.ok
-            assert response.headers.get("x-predibeacon-render-curation") == "prerender-v1"
-            assert page.locator('script[data-predibeacon-render-curation="prerender-v1"]').count() == 1
+            assert response.headers.get("x-predibeacon-render-curation") == "prerender-v2"
+            assert page.locator('script[data-predibeacon-render-curation="prerender-v2"]').count() == 1
             page.wait_for_function("!document.querySelector('#count').textContent.includes('Loading')")
 
             visible_titles = page.locator("#grid .card:visible h3").all_text_contents()
