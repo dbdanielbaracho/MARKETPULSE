@@ -39,7 +39,7 @@ def test_group_keeps_highest_ranked_first_card_per_family():
         {
             "venue": "kalshi",
             "title": "Grant McCray: 3+ hits + runs + RBIs?",
-            "closes_at": "2026-08-28T19:00:40Z",
+            "closes_at": "2026-08-28T19:03:40Z",
             "trend_score": 28,
         },
         {
@@ -53,3 +53,48 @@ def test_group_keeps_highest_ranked_first_card_per_family():
     assert len(grouped) == 2
     assert grouped[0]["title"] == "Grant McCray: 2+ hits + runs + RBIs?"
     assert grouped[1]["title"] == "Grant McCray: 1+ stolen bases?"
+
+
+def test_exact_duplicate_title_is_removed_even_when_close_time_differs():
+    rows = [
+        {
+            "venue": "kalshi",
+            "title": "Will the platinum close price be above 1884.99 USD/ounce on August 24, 2026 at 10:00 PM ET?",
+            "closes_at": "2026-08-25T02:00:00Z",
+            "trend_score": 10,
+        },
+        {
+            "venue": "kalshi",
+            "title": "Will the platinum close price be above 1884.99 USD/ounce on August 24, 2026 at 10:00 PM ET?",
+            "closes_at": "2026-08-25T02:05:00Z",
+            "trend_score": 9,
+        },
+    ]
+    grouped = _group(rows)
+    assert len(grouped) == 1
+
+
+def test_platinum_threshold_ladder_groups_despite_close_time_drift():
+    rows = [
+        {
+            "venue": "kalshi",
+            "title": "Will the platinum close price be above 1884.99 USD/ounce on August 24, 2026 at 10:00 PM ET?",
+            "closes_at": "2026-08-25T02:00:00Z",
+            "trend_score": 10,
+        },
+        {
+            "venue": "kalshi",
+            "title": "Will the platinum close price be above 1885.49 USD/ounce on August 24, 2026 at 10:00 PM ET?",
+            "closes_at": "2026-08-25T02:07:00Z",
+            "trend_score": 9,
+        },
+        {
+            "venue": "kalshi",
+            "title": "Will the platinum close price be above 1885.99 USD/ounce on August 24, 2026 at 10:00 PM ET?",
+            "closes_at": "2026-08-25T02:11:00Z",
+            "trend_score": 8,
+        },
+    ]
+    grouped = _group(rows)
+    assert len(grouped) == 1
+    assert grouped[0]["title"].startswith("Will the platinum close price be above 1884.99")
