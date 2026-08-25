@@ -6,6 +6,7 @@ from app.middleware.home_client_dedup import (
     CURATION_VERSION,
     MAX_PER_SUBJECT_PER_VENUE,
     MIN_HOMEPAGE_RELEVANCE,
+    RENDER_CURATION_VERSION,
     _curate_market_payload,
     _family_title,
     _subject_title,
@@ -178,5 +179,6 @@ def test_curation_does_not_mutate_source_objects():
     assert item == before
 
 
-def test_curation_version_is_explicit_for_production_verification():
-    assert CURATION_VERSION == "quality-v2"
+def test_curation_versions_are_explicit_for_production_verification():
+    assert CURATION_VERSION == "quality-v3"
+    assert RENDER_CURATION_VERSION == "sync-v1"
