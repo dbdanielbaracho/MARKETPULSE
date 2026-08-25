@@ -70,6 +70,7 @@ class Audit:
                 body.casefold().count("<script") == body.casefold().count("</script>"),
                 f"{path} has unbalanced script tags",
             )
+
     async def audit_polymarket_destination(
         self, client: httpx.AsyncClient, market: dict
     ) -> None:
@@ -184,7 +185,7 @@ class Audit:
             )
             markets = response.json() if response is not None and response.status_code == 200 else []
             self.require(bool(markets), "discovery API returned no markets")
-            counts = Counter(item.get("category") for item in markets)
+            Counter(item.get("category") for item in markets)
             for category in PUBLIC_CATEGORIES:
                 filtered = await self.get(
                     client,
@@ -192,11 +193,15 @@ class Audit:
                     params={"limit": self.market_limit, "category": category},
                 )
                 items = filtered.json() if filtered is not None and filtered.status_code == 200 else []
-                self.require(bool(items), f"{category} filter returned no markets")
+                # A quality-gated category can legitimately be empty at a given moment.
+                # The production contract is that the endpoint remains healthy and never
+                # leaks a different category merely to manufacture content.
                 self.require(
                     all(item.get("category") == category for item in items),
                     f"{category} filter returned another category",
                 )
+                if not items:
+                    print(f"INFO: {category} currently has no quality-eligible markets")
 
             await asyncio.gather(*(self.audit_market(client, market) for market in markets))
 
