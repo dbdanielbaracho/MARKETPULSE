@@ -14,38 +14,6 @@ _SCRIPT = r'''<script>
     return s.replace(/\s+/g, ' ').trim();
   };
 
-  const fixKalshiVolume = (card) => {
-    if (card.dataset.kalshiVolumeFixed === '1') return;
-    const venue = card.querySelector('.venue-badge')?.textContent?.trim().toLowerCase() || '';
-    if (!venue.includes('kalshi')) return;
-    const facts = [...card.querySelectorAll('.fact')];
-    const volumeFact = facts.find(f => (f.childNodes[0]?.textContent || '').trim().toLowerCase().startsWith('volume'));
-    const strong = volumeFact?.querySelector('strong');
-    if (!strong) return;
-    const original = strong.textContent.trim();
-    if (!original || original === '—' || /unavailable|indispon/i.test(original)) {
-      card.dataset.kalshiVolumeFixed = '1';
-      return;
-    }
-    // Idempotent: strip any unit accidentally added by an earlier render before
-    // applying the display unit exactly once. This prevents MutationObserver
-    // from recursively producing "contracts contracts ...".
-    const cleaned = original
-      .replace(/(?:\s+contracts)+\s*$/i, '')
-      .replace(/^US\$\s*/i, '')
-      .replace(/^\$\s*/, '')
-      .replace(/^€\s*/, '')
-      .replace(/^£\s*/, '')
-      .trim();
-    const numericZero = /^0(?:[.,]0+)?(?:\s*[KMB])?$/i.test(cleaned);
-    const desired = numericZero ? 'No trades yet' : `${cleaned} contracts`;
-    if (strong.textContent.trim() !== desired) strong.textContent = desired;
-    if (volumeFact.childNodes[0] && volumeFact.childNodes[0].textContent !== 'Volume ') {
-      volumeFact.childNodes[0].textContent = 'Volume ';
-    }
-    card.dataset.kalshiVolumeFixed = '1';
-  };
-
   const dedup = () => {
     const grid = document.querySelector('#grid');
     if (!grid) return;
@@ -55,7 +23,6 @@ _SCRIPT = r'''<script>
     const seenFamily = new Set();
     let visible = 0;
     for (const card of cards) {
-      fixKalshiVolume(card);
       const title = card.querySelector('h3')?.textContent?.trim() || '';
       const venue = card.querySelector('.venue-badge')?.textContent?.trim().toLowerCase() || '';
       const exact = `${venue}|${title.toLowerCase().replace(/\s+/g,' ')}`;
