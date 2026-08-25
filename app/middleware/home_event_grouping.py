@@ -8,11 +8,10 @@ from fastapi import FastAPI, Request
 from starlette.responses import Response
 
 # Prediction venues often expose one event as a ladder of near-identical
-# thresholds (for example platinum > 1908.49, > 1908.99, > 1909.49).  Those
-# are distinct contracts, but showing every rung as a homepage card makes the
-# product look duplicated.  This middleware groups only obvious threshold
-# ladders for the public discovery endpoint; individual contracts remain
-# available by their canonical market URLs and IDs.
+# thresholds. Those are distinct contracts, but showing every rung as a
+# homepage card makes the product look duplicated. This middleware groups
+# obvious ladders for the public discovery endpoint only; every individual
+# contract remains available by its canonical market URL and ID.
 _CURRENCY_THRESHOLD = re.compile(
     r"(?<![\w])(?:US\$|\$|€|£)?\s*\d[\d,]*(?:\.\d+)?\s*(?=(?:USD|EUR|GBP|JPY|CAD|AUD|BTC|ETH)(?:\b|/))",
     re.IGNORECASE,
@@ -21,6 +20,22 @@ _UNIT_THRESHOLD = re.compile(
     r"(?<![\w])\d[\d,]*(?:\.\d+)?\s*(?=(?:%|°[CF]|degrees?\b|ounces?\b|oz\b|barrels?\b|bbl\b))",
     re.IGNORECASE,
 )
+
+# Sports feeds commonly publish one athlete/event with 1+, 2+, 3+, 4+, 5+
+# versions. The noun after the threshold is kept, so different stat families
+# (RBIs vs stolen bases vs hits+runs+RBIs) do not collapse into each other.
+_PLUS_STAT_THRESHOLD = re.compile(
+    r"\b\d+(?:\.\d+)?\+\s*(?=(?:hits?|runs?|rbis?|rbi|goals?|assists?|rebounds?|points?|stolen\s+bases?|bases?|strikeouts?|saves?|shots?|tackles?|receptions?|yards?)\b)",
+    re.IGNORECASE,
+)
+
+# Team/event margin ladders such as "wins by over 4.5 runs" or
+# "wins by more than 4.5 goals" are the same discovery family.
+_MARGIN_THRESHOLD = re.compile(
+    r"\b(?:over|under|more\s+than|less\s+than|at\s+least|at\s+most)\s+\d+(?:\.\d+)?\s*(?=(?:runs?|goals?|points?|yards?|sets?|games?|rounds?)\b)",
+    re.IGNORECASE,
+)
+
 _SPACE = re.compile(r"\s+")
 
 
@@ -28,6 +43,8 @@ def _family_title(title: str) -> str:
     normalized = title.casefold()
     normalized = _CURRENCY_THRESHOLD.sub(" <threshold> ", normalized)
     normalized = _UNIT_THRESHOLD.sub(" <threshold> ", normalized)
+    normalized = _PLUS_STAT_THRESHOLD.sub("<threshold>+ ", normalized)
+    normalized = _MARGIN_THRESHOLD.sub("<threshold> ", normalized)
     return _SPACE.sub(" ", normalized).strip()
 
 
@@ -84,7 +101,7 @@ def register_home_event_grouping_middleware(app: FastAPI) -> None:
         grouped = _group(payload)
         headers = dict(response.headers)
         headers.pop("content-length", None)
-        headers["X-PrediBeacon-Event-Grouping"] = "threshold-ladders"
+        headers["X-PrediBeacon-Event-Grouping"] = "threshold-ladders-v2"
         return Response(
             content=json.dumps(grouped, separators=(",", ":"), ensure_ascii=False),
             status_code=response.status_code,
