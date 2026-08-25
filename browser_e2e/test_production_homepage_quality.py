@@ -20,7 +20,8 @@ RAILWAY = os.getenv(
     "PREDIBEACON_RAILWAY_URL",
     "https://marketpulse-production-aa9f.up.railway.app",
 )
-EXPECTED_CURATION = "quality-v2"
+EXPECTED_CURATION = "quality-v3"
+EXPECTED_RENDER_CURATION = "prerender-v1"
 MIN_RELEVANCE = 5.0
 MAX_PER_SUBJECT_PER_VENUE = 2
 
@@ -51,6 +52,12 @@ def _family(title: str) -> str:
     )
     value = re.sub(
         r"\b(?:over|under|more\s+than|less\s+than|at\s+least|at\s+most)\s+\d+(?:\.\d+)?\s*(?=(?:runs?|goals?|points?|yards?|sets?|games?|rounds?)\b)",
+        "<threshold> ",
+        value,
+        flags=re.I,
+    )
+    value = re.sub(
+        r"\b\d[\d,]*(?:\.\d+)?\s*(?=(?:%|°[cf]|degrees?\b|ounces?\b|oz\b|barrels?\b|bbl\b))",
         "<threshold> ",
         value,
         flags=re.I,
@@ -141,19 +148,81 @@ def _assert_curated_payload(response, *, label: str) -> None:
         )
 
 
+def _wait_for_market_render(page) -> None:
+    page.wait_for_function(
+        """() => {
+            const count = document.querySelector('#count')?.textContent || '';
+            const state = document.querySelector('#state')?.textContent || '';
+            return !count.includes('Loading') && !state.includes('Loading');
+        }""",
+        timeout=25_000,
+    )
+
+
+def _assert_visible_cards(page, *, label: str) -> None:
+    visible = page.locator("#grid .card:visible")
+    cards = visible.evaluate_all(
+        """cards => cards.map(card => ({
+            title: card.querySelector('h3')?.textContent?.trim() || '',
+            venue: card.querySelector('.venue-badge')?.textContent?.trim().toLowerCase() || '',
+            text: card.textContent || ''
+        }))"""
+    )
+    count_text = (page.locator("#count").text_content() or "").strip()
+    count_match = re.match(r"^(\d+)\s+market", count_text, re.I)
+    if count_match:
+        assert int(count_match.group(1)) == len(cards), (label, count_text, len(cards))
+
+    exact_seen: set[tuple[str, str]] = set()
+    family_seen: set[tuple[str, str]] = set()
+    subjects: Counter[tuple[str, str]] = Counter()
+    for card in cards:
+        compact = re.sub(r"\s+", " ", card["text"])
+        assert not re.search(r"Volume\s*US\$\s*0(?:\D|$)", compact, re.I), (label, card)
+        relevance = re.search(r"(?:Relevance|Relevância|Trend)\s*([0-9]+(?:[.,][0-9]+)?)\s*/?100", compact, re.I)
+        if relevance:
+            score = float(relevance.group(1).replace(",", "."))
+            assert score >= MIN_RELEVANCE, (label, card)
+        exact = (card["venue"], _text(card["title"]))
+        family = (card["venue"], _family(card["title"]))
+        subject = (card["venue"], _subject(card["title"]))
+        assert exact not in exact_seen, (label, "visible exact duplicate", exact, cards)
+        assert family not in family_seen, (label, "visible family duplicate", family, cards)
+        exact_seen.add(exact)
+        family_seen.add(family)
+        subjects[subject] += 1
+        assert subjects[subject] <= MAX_PER_SUBJECT_PER_VENUE, (
+            label,
+            "visible subject monopolization",
+            subject,
+            subjects[subject],
+            cards,
+        )
+
+
 def test_custom_and_railway_origins_execute_same_quality_gate():
     with sync_playwright() as p:
         request = p.request.new_context()
         try:
             for label, base in (("custom", CUSTOM), ("railway", RAILWAY)):
-                for query in ("?limit=100", "?venue=kalshi&limit=100", "?venue=polymarket&limit=100"):
+                for query in (
+                    "?limit=100",
+                    "?sort=movers&limit=100",
+                    "?sort=volume&limit=100",
+                    "?venue=kalshi&limit=100",
+                    "?venue=polymarket&limit=100",
+                    "?category=Economy&limit=100",
+                    "?category=Politics&limit=100",
+                    "?category=Sports&limit=100",
+                    "?category=Tech&limit=100",
+                ):
                     response = request.get(base + "/api/v1/markets" + query, timeout=30_000)
                     _assert_curated_payload(response, label=f"{label}:{query}")
         finally:
             request.dispose()
 
 
-def test_browser_never_renders_zero_volume_or_subthreshold_relevance_cards():
+def test_browser_final_dom_is_curated_synchronously_across_interactions():
     with sync_playwright() as p:
         browser = p.chromium.launch()
         context = browser.new_context(viewport={"width": 1440, "height": 1000})
@@ -163,33 +232,28 @@ def test_browser_never_renders_zero_volume_or_subthreshold_relevance_cards():
         try:
             response = page.goto(CUSTOM, wait_until="domcontentloaded", timeout=30_000)
             assert response is not None and response.ok
-            page.wait_for_function(
-                """() => {
-                    const count = document.querySelector('#count')?.textContent || '';
-                    const state = document.querySelector('#state')?.textContent || '';
-                    return !count.includes('Loading') && !state.includes('Loading');
-                }""",
-                timeout=25_000,
-            )
-            visible = page.locator("#grid .card:visible")
-            cards = visible.evaluate_all(
-                """cards => cards.map(card => ({
-                    title: card.querySelector('h3')?.textContent?.trim() || '',
-                    venue: card.querySelector('.venue-badge')?.textContent?.trim().toLowerCase() || '',
-                    text: card.textContent || ''
-                }))"""
-            )
-            family_seen: set[tuple[str, str]] = set()
-            for card in cards:
-                compact = re.sub(r"\s+", " ", card["text"])
-                assert not re.search(r"Volume\s*US\$\s*0(?:\D|$)", compact, re.I), card
-                relevance = re.search(r"(?:Relevance|Relevância|Trend)\s*([0-9]+(?:[.,][0-9]+)?)\s*/?100", compact, re.I)
-                if relevance:
-                    score = float(relevance.group(1).replace(",", "."))
-                    assert score >= MIN_RELEVANCE, card
-                family = (card["venue"], _family(card["title"]))
-                assert family not in family_seen, ("visible family duplicate", family, cards)
-                family_seen.add(family)
+            headers = {key.casefold(): value for key, value in response.headers.items()}
+            assert headers.get("x-predibeacon-render-curation") == EXPECTED_RENDER_CURATION, headers
+            assert page.locator('script[data-predibeacon-render-curation="prerender-v1"]').count() == 1
+            _wait_for_market_render(page)
+            _assert_visible_cards(page, label="default")
+
+            for sort_value in ("movers", "volume", "trending"):
+                page.locator("#sort").select_option(sort_value)
+                _wait_for_market_render(page)
+                _assert_visible_cards(page, label=f"sort:{sort_value}")
+
+            for venue_value in ("kalshi", "polymarket", ""):
+                page.locator("#venue").select_option(venue_value)
+                _wait_for_market_render(page)
+                _assert_visible_cards(page, label=f"venue:{venue_value or 'all'}")
+
+            for category in ("Economy", "Politics", "Sports", "Tech", ""):
+                selector = f'.chip[data-category="{category}"]'
+                page.locator(selector).click()
+                _wait_for_market_render(page)
+                _assert_visible_cards(page, label=f"category:{category or 'all'}")
+
             assert not errors, errors
         finally:
             context.close()
