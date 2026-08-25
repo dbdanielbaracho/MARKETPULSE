@@ -7,12 +7,33 @@ _SCRIPT = r'''<script>
 (() => {
   const normalize = (title) => {
     let s = String(title || '').toLowerCase().replace(/\s+/g, ' ').trim();
-    // Exact duplicate protection first.
     s = s.replace(/(?:us\$|\$|€|£)?\s*\d[\d,]*(?:\.\d+)?\s*(?=(?:usd|eur|gbp|jpy|cad|aud|btc|eth)(?:\b|\/))/gi, '<threshold> ');
     s = s.replace(/\b\d+(?:\.\d+)?\+\s*(?=(?:hits?|runs?|rbis?|rbi|goals?|assists?|rebounds?|points?|stolen\s+bases?|bases?|strikeouts?|saves?|shots?|tackles?|receptions?|yards?)\b)/gi, '<threshold>+ ');
     s = s.replace(/\b(?:over|under|more\s+than|less\s+than|at\s+least|at\s+most)\s+\d+(?:\.\d+)?\s*(?=(?:runs?|goals?|points?|yards?|sets?|games?|rounds?)\b)/gi, '<threshold> ');
     s = s.replace(/\b\d[\d,]*(?:\.\d+)?\s*(?=(?:%|°[cf]|degrees?\b|ounces?\b|oz\b|barrels?\b|bbl\b))/gi, '<threshold> ');
     return s.replace(/\s+/g, ' ').trim();
+  };
+
+  const fixKalshiVolume = (card) => {
+    const venue = card.querySelector('.venue-badge')?.textContent?.trim().toLowerCase() || '';
+    if (!venue.includes('kalshi')) return;
+    const facts = [...card.querySelectorAll('.fact')];
+    const volumeFact = facts.find(f => (f.childNodes[0]?.textContent || '').trim().toLowerCase().startsWith('volume'));
+    const strong = volumeFact?.querySelector('strong');
+    if (!strong) return;
+    const original = strong.textContent.trim();
+    if (!original || original === '—' || /unavailable|indispon/i.test(original)) return;
+    // Kalshi REST volume_fp is traded contract volume, not USD. Never present
+    // it with a currency label. Keep compact formatting but state the unit.
+    const cleaned = original
+      .replace(/^US\$\s*/i, '')
+      .replace(/^\$\s*/, '')
+      .replace(/^€\s*/, '')
+      .replace(/^£\s*/, '')
+      .trim();
+    const numericZero = /^0(?:[.,]0+)?(?:\s*[KMB])?$/i.test(cleaned);
+    strong.textContent = numericZero ? 'No trades yet' : `${cleaned} contracts`;
+    if (volumeFact.childNodes[0]) volumeFact.childNodes[0].textContent = 'Volume ';
   };
 
   const dedup = () => {
@@ -24,6 +45,7 @@ _SCRIPT = r'''<script>
     const seenFamily = new Set();
     let visible = 0;
     for (const card of cards) {
+      fixKalshiVolume(card);
       const title = card.querySelector('h3')?.textContent?.trim() || '';
       const venue = card.querySelector('.venue-badge')?.textContent?.trim().toLowerCase() || '';
       const exact = `${venue}|${title.toLowerCase().replace(/\s+/g,' ')}`;
