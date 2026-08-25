@@ -37,7 +37,6 @@ jobs:
         run: sleep 60
       - name: Test real PrediBeacon production
         id: production_smoke
-        continue-on-error: true
         env:
           PREDIBEACON_PRODUCTION_SMOKE: '1'
           PREDIBEACON_CUSTOM_URL: 'https://predibeacon.com'
