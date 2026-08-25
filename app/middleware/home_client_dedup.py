@@ -15,6 +15,7 @@ _SCRIPT = r'''<script>
   };
 
   const fixKalshiVolume = (card) => {
+    if (card.dataset.kalshiVolumeFixed === '1') return;
     const venue = card.querySelector('.venue-badge')?.textContent?.trim().toLowerCase() || '';
     if (!venue.includes('kalshi')) return;
     const facts = [...card.querySelectorAll('.fact')];
@@ -22,18 +23,27 @@ _SCRIPT = r'''<script>
     const strong = volumeFact?.querySelector('strong');
     if (!strong) return;
     const original = strong.textContent.trim();
-    if (!original || original === '—' || /unavailable|indispon/i.test(original)) return;
-    // Kalshi REST volume_fp is traded contract volume, not USD. Never present
-    // it with a currency label. Keep compact formatting but state the unit.
+    if (!original || original === '—' || /unavailable|indispon/i.test(original)) {
+      card.dataset.kalshiVolumeFixed = '1';
+      return;
+    }
+    // Idempotent: strip any unit accidentally added by an earlier render before
+    // applying the display unit exactly once. This prevents MutationObserver
+    // from recursively producing "contracts contracts ...".
     const cleaned = original
+      .replace(/(?:\s+contracts)+\s*$/i, '')
       .replace(/^US\$\s*/i, '')
       .replace(/^\$\s*/, '')
       .replace(/^€\s*/, '')
       .replace(/^£\s*/, '')
       .trim();
     const numericZero = /^0(?:[.,]0+)?(?:\s*[KMB])?$/i.test(cleaned);
-    strong.textContent = numericZero ? 'No trades yet' : `${cleaned} contracts`;
-    if (volumeFact.childNodes[0]) volumeFact.childNodes[0].textContent = 'Volume ';
+    const desired = numericZero ? 'No trades yet' : `${cleaned} contracts`;
+    if (strong.textContent.trim() !== desired) strong.textContent = desired;
+    if (volumeFact.childNodes[0] && volumeFact.childNodes[0].textContent !== 'Volume ') {
+      volumeFact.childNodes[0].textContent = 'Volume ';
+    }
+    card.dataset.kalshiVolumeFixed = '1';
   };
 
   const dedup = () => {
@@ -51,7 +61,7 @@ _SCRIPT = r'''<script>
       const exact = `${venue}|${title.toLowerCase().replace(/\s+/g,' ')}`;
       const family = `${venue}|${normalize(title)}`;
       const duplicate = seenExact.has(exact) || seenFamily.has(family);
-      card.hidden = duplicate;
+      if (card.hidden !== duplicate) card.hidden = duplicate;
       if (!duplicate) {
         seenExact.add(exact);
         seenFamily.add(family);
@@ -59,7 +69,8 @@ _SCRIPT = r'''<script>
       }
     }
     const count = document.querySelector('#count');
-    if (count) count.textContent = visible + (visible === 1 ? ' market' : ' markets');
+    const desiredCount = visible + (visible === 1 ? ' market' : ' markets');
+    if (count && count.textContent !== desiredCount) count.textContent = desiredCount;
   };
 
   let scheduled = false;
