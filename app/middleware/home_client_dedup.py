@@ -13,7 +13,7 @@ MIN_HOMEPAGE_VOLUME_USD = 0.01
 MIN_TIME_TO_CLOSE = timedelta(hours=1)
 MAX_PER_SUBJECT_PER_VENUE = 2
 CURATION_VERSION = "quality-v3"
-RENDER_CURATION_VERSION = "sync-v1"
+RENDER_CURATION_VERSION = "prerender-v1"
 
 _THRESHOLD_PATTERNS = (
     re.compile(r"\b(above|below|over|under|more\s+than|less\s+than|at\s+least|at\s+most)\s+(?:us\$|\$|€|£)?\s*\d[\d,]*(?:\.\d+)?", re.I),
@@ -25,6 +25,12 @@ _THRESHOLD_PATTERNS = (
 _SUBJECT_SUFFIX = re.compile(
     r"\s*:\s*(?:\d+(?:\.\d+)?\+?\s*)?(?:points?|assists?|rebounds?|threes?|three-pointers?|hits?|runs?|rbis?|goals?|stolen\s+bases?|strikeouts?|saves?|shots?|tackles?|receptions?|yards?)\??$",
     re.I,
+)
+
+_RENDER_NEEDLE = "const data=await r.json();grid.innerHTML=data.map(card).join('');"
+_RENDER_REPLACEMENT = (
+    "const rawData=await r.json(),data=window.PrediBeaconHomepageCurate(rawData);"
+    "grid.innerHTML=data.map(card).join('');"
 )
 
 
@@ -94,12 +100,7 @@ def _is_quality_market(item: dict[str, object], *, now: datetime) -> bool:
 
 
 def _curate_market_payload(items: list[dict[str, object]], *, now: datetime | None = None) -> list[dict[str, object]]:
-    """Fail closed on homepage noise before the browser receives market cards.
-
-    The public discovery feed is intentionally stricter than the canonical market
-    inventory. Unknown quality metrics are rejected, threshold ladders collapse to
-    one representative per venue, and one subject cannot monopolize the homepage.
-    """
+    """Fail closed on homepage noise before the browser receives market cards."""
     current = now or datetime.now(timezone.utc)
     curated: list[dict[str, object]] = []
     seen_exact: set[tuple[str, str]] = set()
@@ -128,10 +129,11 @@ def _curate_market_payload(items: list[dict[str, object]], *, now: datetime | No
     return curated
 
 
-_SCRIPT = r'''<script>
+_SCRIPT = r'''<script data-predibeacon-render-curation="prerender-v1">
 (() => {
-  const normalize = (title) => {
-    let s = String(title || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  const text = (value) => String(value || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  const family = (title) => {
+    let s = text(title);
     s = s.replace(/\b(above|below|over|under|more\s+than|less\s+than|at\s+least|at\s+most)\s+(?:us\$|\$|€|£)?\s*\d[\d,]*(?:\.\d+)?/gi, '$1 <threshold>');
     s = s.replace(/(?:us\$|\$|€|£)?\s*\d[\d,]*(?:\.\d+)?\s*(?=(?:usd|eur|gbp|jpy|cad|aud|btc|eth)(?:\b|\/))/gi, '<threshold> ');
     s = s.replace(/\b\d+(?:\.\d+)?\+\s*(?=(?:hits?|runs?|rbis?|rbi|goals?|assists?|rebounds?|points?|stolen\s+bases?|bases?|strikeouts?|saves?|shots?|tackles?|receptions?|yards?)\b)/gi, '<threshold>+ ');
@@ -139,81 +141,61 @@ _SCRIPT = r'''<script>
     s = s.replace(/\b\d[\d,]*(?:\.\d+)?\s*(?=(?:%|°[cf]|degrees?\b|ounces?\b|oz\b|barrels?\b|bbl\b))/gi, '<threshold> ');
     return s.replace(/\s+/g, ' ').trim();
   };
-
-  const facts = (card) => [...card.querySelectorAll('.fact')];
-  const factValue = (card, labels) => {
-    const wanted = labels.map(label => label.toLowerCase());
-    const fact = facts(card).find((node) => {
-      const label = (node.childNodes[0]?.textContent || '').trim().toLowerCase();
-      return wanted.some(item => label.startsWith(item));
-    });
-    return fact?.querySelector('strong')?.textContent?.trim() || '';
+  const subject = (title) => {
+    const s = text(title);
+    return s.replace(/\s*:\s*(?:\d+(?:\.\d+)?\+?\s*)?(?:points?|assists?|rebounds?|threes?|three-pointers?|hits?|runs?|rbis?|goals?|stolen\s+bases?|strikeouts?|saves?|shots?|tackles?|receptions?|yards?)\??$/i, '').trim() || s;
   };
-  const parseCompactNumber = (text) => {
-    if (!text) return null;
-    const compact = String(text).replace(/\s/g, '').toUpperCase();
-    const match = compact.match(/^(?:US\$|\$)?([0-9]+(?:[.,][0-9]+)?)(K|M|B|MIL|MI|BI)?(?:\/100)?$/);
-    if (!match) return null;
-    let value = Number(match[1].replace(',', '.'));
-    if (!Number.isFinite(value)) return null;
-    const suffix = match[2] || '';
-    if (suffix === 'K' || suffix === 'MIL') value *= 1_000;
-    if (suffix === 'M' || suffix === 'MI') value *= 1_000_000;
-    if (suffix === 'B' || suffix === 'BI') value *= 1_000_000_000;
-    return value;
-  };
-  const numericVolume = (card) => parseCompactNumber(factValue(card, ['volume']));
-  const numericRelevance = (card) => parseCompactNumber(factValue(card, ['trend', 'relevance', 'relevância']));
-  const closesImmediately = (card) => {
-    const text = factValue(card, ['closes in', 'fecha em', 'closes']).toLowerCase();
-    if (!text) return false;
-    return /\b(?:0|1)\s*(?:h|hour|hours|hr|hrs|hora|horas)\b/.test(text);
+  const finiteNumber = (value) => typeof value === 'number' && Number.isFinite(value) ? value : null;
+  const quality = (item, now) => {
+    if (!item || typeof item !== 'object') return false;
+    const title = text(item.title), venue = text(item.venue), id = text(item.canonical_id);
+    if (!title || !id || !['kalshi','polymarket'].includes(venue)) return false;
+    const volume = finiteNumber(item.volume_usd), relevance = finiteNumber(item.trend_score);
+    if (volume === null || volume < 0.01 || relevance === null || relevance < 5) return false;
+    if (item.probability != null) {
+      const p = finiteNumber(item.probability);
+      if (p === null || p < 0 || p > 1) return false;
+    }
+    if (typeof item.closes_at === 'string' && item.closes_at.trim()) {
+      const closes = Date.parse(item.closes_at);
+      if (Number.isFinite(closes) && closes <= now + 3600000) return false;
+    }
+    return true;
   };
 
-  const dedup = () => {
+  window.PrediBeaconHomepageCurate = (items) => {
+    if (!Array.isArray(items)) return [];
+    const now = Date.now(), exactSeen = new Set(), familySeen = new Set(), subjectCounts = new Map(), out = [];
+    for (const item of items) {
+      if (!quality(item, now)) continue;
+      const venue = text(item.venue), title = text(item.title);
+      const exact = venue + '|' + title, familyKey = venue + '|' + family(title), subjectKey = venue + '|' + subject(title);
+      if (exactSeen.has(exact) || familySeen.has(familyKey)) continue;
+      if ((subjectCounts.get(subjectKey) || 0) >= 2) continue;
+      exactSeen.add(exact);
+      familySeen.add(familyKey);
+      subjectCounts.set(subjectKey, (subjectCounts.get(subjectKey) || 0) + 1);
+      out.push(item);
+    }
+    return out;
+  };
+
+  // Defense in depth only. Primary enforcement happens before grid.innerHTML via
+  // PrediBeaconHomepageCurate. This catches future DOM writers that bypass load().
+  const auditDom = () => {
     const grid = document.querySelector('#grid');
     if (!grid) return;
-    const cards = [...grid.querySelectorAll('.card')];
-    if (!cards.length) return;
-    const seenExact = new Set();
-    const seenFamily = new Set();
-    let visible = 0;
-    for (const card of cards) {
-      const title = card.querySelector('h3')?.textContent?.trim() || '';
+    const seen = new Set();
+    for (const card of grid.querySelectorAll('.card')) {
+      const title = card.querySelector('h3')?.textContent || '';
       const venue = card.querySelector('.venue-badge')?.textContent?.trim().toLowerCase() || '';
-      const exact = `${venue}|${title.toLowerCase().replace(/\s+/g,' ')}`;
-      const family = `${venue}|${normalize(title)}`;
-      const volume = numericVolume(card);
-      const relevance = numericRelevance(card);
-      const hidden = volume === null || volume <= 0 || relevance === null || relevance < 5 || closesImmediately(card) || seenExact.has(exact) || seenFamily.has(family);
-      if (card.hidden !== hidden) card.hidden = hidden;
-      if (!hidden) {
-        seenExact.add(exact);
-        seenFamily.add(family);
-        visible += 1;
-      }
-    }
-    const count = document.querySelector('#count');
-    const desiredCount = visible + (visible === 1 ? ' market' : ' markets');
-    if (count && count.textContent !== desiredCount) count.textContent = desiredCount;
-    const state = document.querySelector('#state');
-    if (state) {
-      state.hidden = visible > 0;
-      if (visible === 0) state.textContent = 'No actively traded markets match these filters.';
+      const key = venue + '|' + family(title);
+      if (seen.has(key)) card.hidden = true;
+      else if (!card.hidden) seen.add(key);
     }
   };
-
-  const boot = () => {
-    const grid = document.querySelector('#grid');
-    if (!grid) return;
-    // Run in the MutationObserver microtask itself. Do not defer with
-    // requestAnimationFrame: the final DOM must be curated before paint and before
-    // acceptance tests or assistive technology can observe an uncurated frame.
-    new MutationObserver(() => dedup()).observe(grid, {childList: true, subtree: true, characterData: true});
-    dedup();
-  };
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, {once: true});
-  else boot();
+  const grid = document.querySelector('#grid');
+  if (grid) new MutationObserver(auditDom).observe(grid, {childList:true, subtree:true});
 })();
 </script>'''
 
@@ -250,7 +232,16 @@ def register_home_client_dedup_middleware(app: FastAPI) -> None:
             body = raw.decode("utf-8")
         except UnicodeDecodeError:
             return Response(content=raw, status_code=response.status_code, headers=headers, media_type=response.media_type)
-        if "</body>" in body and "home-client-dedup" not in body:
-            body = body.replace("</body>", "<!-- home-client-dedup -->" + _SCRIPT + "</body>")
-        headers["X-PrediBeacon-Render-Curation"] = RENDER_CURATION_VERSION
+
+        rewritten = _RENDER_NEEDLE in body
+        if rewritten:
+            body = body.replace(_RENDER_NEEDLE, _RENDER_REPLACEMENT, 1)
+        injected = "data-predibeacon-render-curation" in body
+        if not injected and "<script>" in body:
+            body = body.replace("<script>", "<!-- home-prerender-curation -->" + _SCRIPT + "<script>", 1)
+            injected = True
+
+        headers["X-PrediBeacon-Render-Curation"] = (
+            RENDER_CURATION_VERSION if rewritten and injected else "missing"
+        )
         return Response(content=body, status_code=response.status_code, headers=headers, media_type=response.media_type)
