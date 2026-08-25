@@ -150,7 +150,7 @@ def _assert_curated_payload(response, *, label: str) -> None:
 
 def _wait_for_market_render(page) -> None:
     page.wait_for_function(
-        """() => {
+        r"""() => {
             const countText = (document.querySelector('#count')?.textContent || '').trim();
             const state = (document.querySelector('#state')?.textContent || '').trim();
             if (countText.includes('Loading') || state.includes('Loading')) return false;
@@ -215,6 +215,20 @@ def _assert_visible_cards(page, *, label: str) -> None:
         )
 
 
+def _select_visible_venue(page, venue_value: str) -> None:
+    venue_key = venue_value or "all"
+    expected_hidden_value = venue_value
+    control = page.locator(f'[data-venue-link="{venue_key}"]:visible').first
+    assert control.is_visible(), ("missing visible venue control", venue_key)
+    control.click()
+    page.wait_for_function(
+        "expected => document.querySelector('#venue')?.value === expected",
+        arg=expected_hidden_value,
+        timeout=25_000,
+    )
+    _wait_for_market_render(page)
+
+
 def test_custom_and_railway_origins_execute_same_quality_gate():
     with sync_playwright() as p:
         request = p.request.new_context()
@@ -258,9 +272,12 @@ def test_browser_final_dom_is_curated_synchronously_across_interactions():
                 _wait_for_market_render(page)
                 _assert_visible_cards(page, label=f"sort:{sort_value}")
 
+            # The V2 homepage deliberately hides the legacy #venue select and exposes
+            # Kalshi / PrediBeacon / Polymarket as the user-facing venue controls.
+            # Exercise those visible controls, then assert the hidden state and final
+            # rendered cards agree with the user action.
             for venue_value in ("kalshi", "polymarket", ""):
-                page.locator("#venue").select_option(venue_value)
-                _wait_for_market_render(page)
+                _select_visible_venue(page, venue_value)
                 _assert_visible_cards(page, label=f"venue:{venue_value or 'all'}")
 
             for category in ("Economy", "Politics", "Sports", "Tech", ""):
