@@ -27,6 +27,7 @@ class KalshiAdapter:
             if not isinstance(raw_markets, list):
                 raw_markets = []
             await self._enrich_missing_series_tickers(client, raw_markets)
+            await self._enrich_series_metadata(client, raw_markets)
         return [self.normalize(item) for item in raw_markets], payload.get("cursor")
 
     async def _enrich_missing_series_tickers(
@@ -34,14 +35,7 @@ class KalshiAdapter:
         client: httpx.AsyncClient,
         markets: list[dict[str, Any]],
     ) -> None:
-        """Resolve missing series metadata from Kalshi's canonical Event endpoint.
-
-        The market list can occasionally omit ``series_ticker`` for otherwise valid
-        contracts. PrediBeacon must not guess a browser URL from a contract ticker,
-        so we resolve the parent event and use its documented ``series_ticker``.
-        Failures are deliberately soft: the market remains informational and its
-        outbound route stays unavailable rather than sending a user to a guessed URL.
-        """
+        """Resolve missing series metadata from Kalshi's canonical Event endpoint."""
         missing_by_event: dict[str, list[dict[str, Any]]] = {}
         for item in markets:
             if not isinstance(item, dict) or str(item.get("series_ticker") or "").strip():
@@ -76,8 +70,54 @@ class KalshiAdapter:
             for item in missing_by_event[event_ticker]:
                 item["series_ticker"] = series_ticker
 
+    async def _enrich_series_metadata(
+        self,
+        client: httpx.AsyncClient,
+        markets: list[dict[str, Any]],
+    ) -> None:
+        """Attach Kalshi's canonical series category/tags to market rows.
+
+        The markets endpoint does not reliably include a public category on every
+        contract. Public PrediBeacon filters therefore resolve the parent series
+        instead of guessing categories from arbitrary ticker strings.
+        """
+        by_series: dict[str, list[dict[str, Any]]] = {}
+        for item in markets:
+            if not isinstance(item, dict):
+                continue
+            series_ticker = str(item.get("series_ticker") or "").strip()
+            if series_ticker:
+                by_series.setdefault(series_ticker, []).append(item)
+        if not by_series:
+            return
+
+        semaphore = asyncio.Semaphore(8)
+
+        async def resolve(series_ticker: str) -> tuple[str, str | None, list[str]]:
+            try:
+                async with semaphore:
+                    response = await client.get(f"{self.base_url}/series/{series_ticker}")
+                    response.raise_for_status()
+                payload = response.json()
+                series = payload.get("series", {}) if isinstance(payload, dict) else {}
+                if not isinstance(series, dict):
+                    return series_ticker, None, []
+                category = str(series.get("category") or "").strip() or None
+                raw_tags = series.get("tags")
+                tags = [str(tag).strip() for tag in raw_tags if str(tag).strip()] if isinstance(raw_tags, list) else []
+                return series_ticker, category, tags
+            except (httpx.HTTPError, ValueError, TypeError):
+                return series_ticker, None, []
+
+        results = await asyncio.gather(*(resolve(series_ticker) for series_ticker in by_series))
+        for series_ticker, category, tags in results:
+            for item in by_series[series_ticker]:
+                if category:
+                    item["_predibeacon_series_category"] = category
+                if tags:
+                    item["_predibeacon_series_tags"] = tags
+
     async def fetch_market(self, ticker: str) -> dict[str, Any]:
-        """Fetch full public contract metadata, including venue resolution rules."""
         if not ticker or len(ticker) > 200:
             raise ValueError("invalid Kalshi ticker")
         async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
@@ -87,11 +127,6 @@ class KalshiAdapter:
         return payload if isinstance(payload, dict) else {}
 
     async def fetch_orderbook(self, ticker: str, depth: int = 20) -> dict[str, Any]:
-        """Fetch public displayed order-book levels for one Kalshi market.
-
-        This endpoint is read-only. PrediBeacon uses it only to describe visible
-        spread/depth; it does not place orders or infer guaranteed execution.
-        """
         if not ticker or len(ticker) > 200:
             raise ValueError("invalid Kalshi ticker")
         if depth < 1 or depth > 100:
@@ -127,12 +162,16 @@ class KalshiAdapter:
         ticker = str(item.get("ticker") or item.get("id") or "")
         series_ticker = str(item.get("series_ticker") or "").strip()
         title = str(item.get("title") or item.get("subtitle") or ticker)
+        provider_category = item.get("category") or item.get("_predibeacon_series_category")
         return NormalizedMarket(
             venue="kalshi",
             venue_market_id=ticker,
             title=title,
-            category=classify_market_category(title=title, provider_category=item.get("category"), raw=item),
+            category=classify_market_category(title=title, provider_category=provider_category, raw=item),
             yes_probability=probability,
+            # Kalshi volume_fp is contract volume, not a USD monetary value. The
+            # current shared field is retained internally for activity ranking;
+            # the public card presentation labels Kalshi values as contracts.
             volume_usd=(
                 float(item["volume_fp"])
                 if item.get("volume_fp") is not None
@@ -141,8 +180,6 @@ class KalshiAdapter:
                 else None
             ),
             closes_at=closes_at,
-            # Kalshi's public Event API exposes the canonical parent series ticker.
-            # Never guess a UI slug from an individual contract ticker.
             source_url=f"https://kalshi.com/markets/{series_ticker.lower()}" if series_ticker else None,
             raw=item,
         )
