@@ -77,9 +77,10 @@ jobs:
       - name: Production API/domain audit
         run: python -m scripts.production_audit --deploy-timeout 600 --market-limit 50
 
-      - name: Production public journey and responsive acceptance
+      - name: Production public journey, homepage quality and responsive acceptance
         run: |
           pytest -q browser_e2e/test_production_smoke.py
+          pytest -q browser_e2e/test_production_home_quality.py
           pytest -q browser_e2e/test_production_mobile.py
           pytest -q browser_e2e/test_production_outbound.py
           pytest -q browser_e2e/test_production_www.py
