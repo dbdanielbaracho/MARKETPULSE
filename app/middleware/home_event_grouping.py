@@ -39,6 +39,10 @@ _MARGIN_THRESHOLD = re.compile(
 _SPACE = re.compile(r"\s+")
 
 
+def _normalized_title(title: str) -> str:
+    return _SPACE.sub(" ", title.casefold()).strip()
+
+
 def _family_title(title: str) -> str:
     normalized = title.casefold()
     normalized = _CURRENCY_THRESHOLD.sub(" <threshold> ", normalized)
@@ -48,27 +52,45 @@ def _family_title(title: str) -> str:
     return _SPACE.sub(" ", normalized).strip()
 
 
-def _close_bucket(value: str | None) -> str:
+def _close_day(value: str | None) -> str:
+    """Use the event day, not exact feed timestamp, for discovery grouping.
+
+    Providers can publish sibling contracts from the same event with slightly
+    different close timestamps. Minute-level bucketing therefore leaked
+    duplicates. A date-level bucket is stable enough for homepage discovery;
+    the normalized title/family still prevents unrelated events from merging.
+    """
     if not value:
         return ""
     try:
         dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
-        return value
-    # Same event deadline, allowing harmless feed precision differences.
-    return dt.replace(second=0, microsecond=0).isoformat()
+        return value[:10]
+    return dt.date().isoformat()
 
 
 def _group(markets: list[dict]) -> list[dict]:
     grouped: list[dict] = []
-    seen: set[tuple[str, str, str]] = set()
+    exact_seen: set[tuple[str, str]] = set()
+    family_seen: set[tuple[str, str, str]] = set()
+
+    # Input is already ranked. Keeping the first contract preserves the most
+    # relevant representative while suppressing duplicate/sibling cards.
     for market in markets:
         title = str(market.get("title") or "")
         venue = str(market.get("venue") or "")
-        key = (venue, _family_title(title), _close_bucket(market.get("closes_at")))
-        if key in seen:
+
+        # Exact duplicate titles from a provider should never render twice,
+        # even if the upstream feed reports different closing timestamps.
+        exact_key = (venue, _normalized_title(title))
+        if exact_key in exact_seen:
             continue
-        seen.add(key)
+        exact_seen.add(exact_key)
+
+        family_key = (venue, _family_title(title), _close_day(market.get("closes_at")))
+        if family_key in family_seen:
+            continue
+        family_seen.add(family_key)
         grouped.append(market)
     return grouped
 
@@ -101,7 +123,7 @@ def register_home_event_grouping_middleware(app: FastAPI) -> None:
         grouped = _group(payload)
         headers = dict(response.headers)
         headers.pop("content-length", None)
-        headers["X-PrediBeacon-Event-Grouping"] = "threshold-ladders-v2"
+        headers["X-PrediBeacon-Event-Grouping"] = "event-family-v3"
         return Response(
             content=json.dumps(grouped, separators=(",", ":"), ensure_ascii=False),
             status_code=response.status_code,
