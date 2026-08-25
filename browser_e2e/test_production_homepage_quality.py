@@ -21,7 +21,7 @@ RAILWAY = os.getenv(
     "https://marketpulse-production-aa9f.up.railway.app",
 )
 EXPECTED_CURATION = "quality-v3"
-EXPECTED_RENDER_CURATION = "sync-v1"
+EXPECTED_RENDER_CURATION = "prerender-v1"
 MIN_RELEVANCE = 5.0
 MAX_PER_SUBJECT_PER_VENUE = 2
 
@@ -234,6 +234,7 @@ def test_browser_final_dom_is_curated_synchronously_across_interactions():
             assert response is not None and response.ok
             headers = {key.casefold(): value for key, value in response.headers.items()}
             assert headers.get("x-predibeacon-render-curation") == EXPECTED_RENDER_CURATION, headers
+            assert page.locator('script[data-predibeacon-render-curation="prerender-v1"]').count() == 1
             _wait_for_market_render(page)
             _assert_visible_cards(page, label="default")
 
