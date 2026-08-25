@@ -151,9 +151,18 @@ def _assert_curated_payload(response, *, label: str) -> None:
 def _wait_for_market_render(page) -> None:
     page.wait_for_function(
         """() => {
-            const count = document.querySelector('#count')?.textContent || '';
-            const state = document.querySelector('#state')?.textContent || '';
-            return !count.includes('Loading') && !state.includes('Loading');
+            const countText = (document.querySelector('#count')?.textContent || '').trim();
+            const state = (document.querySelector('#state')?.textContent || '').trim();
+            if (countText.includes('Loading') || state.includes('Loading')) return false;
+            const match = countText.match(/^(\d+)\s+market/i);
+            if (!match) return countText === 'Unavailable';
+            const expected = Number(match[1]);
+            const visible = [...document.querySelectorAll('#grid .card')].filter(card => {
+                if (card.hidden) return false;
+                const style = getComputedStyle(card);
+                return style.display !== 'none' && style.visibility !== 'hidden' && card.getClientRects().length > 0;
+            }).length;
+            return expected === visible;
         }""",
         timeout=25_000,
     )
@@ -172,6 +181,12 @@ def _assert_visible_cards(page, *, label: str) -> None:
     count_match = re.match(r"^(\d+)\s+market", count_text, re.I)
     if count_match:
         assert int(count_match.group(1)) == len(cards), (label, count_text, len(cards))
+
+    if not cards:
+        state = page.locator("#state")
+        state_text = (state.text_content() or "").strip()
+        assert state.is_visible(), (label, "empty result has no visible explanation")
+        assert state_text and "Loading" not in state_text, (label, state_text)
 
     exact_seen: set[tuple[str, str]] = set()
     family_seen: set[tuple[str, str]] = set()
