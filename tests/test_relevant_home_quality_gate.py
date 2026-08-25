@@ -38,6 +38,10 @@ def _market(
     )
 
 
+def _relevant() -> list:
+    return relevant_markets(Response(), category=None, venue=None, q=None, limit=100)
+
+
 def test_relevant_feed_rejects_zero_or_unknown_activity_zero_attention_and_immediate_expiry(monkeypatch):
     good = _market("good", "Useful market", volume=2500, trend=60, closes_in_hours=24)
     zero_volume = _market("zero-volume", "Seattle wins by over 8.5 runs?", volume=0, trend=70)
@@ -52,7 +56,7 @@ def test_relevant_feed_rejects_zero_or_unknown_activity_zero_attention_and_immed
     )
     monkeypatch.setattr(core, "_DISCOVERY", [zero_volume, unknown_volume, zero_trend, closing_now, good])
 
-    result = relevant_markets(Response(), limit=100)
+    result = _relevant()
 
     assert [item.canonical_id for item in result] == [good.canonical_id]
     assert all((item.volume_usd or 0) > 0 for item in result)
@@ -69,7 +73,7 @@ def test_relevant_feed_collapses_same_provider_threshold_ladders(monkeypatch):
     ]
     monkeypatch.setattr(core, "_DISCOVERY", markets)
 
-    result = relevant_markets(Response(), limit=100)
+    result = _relevant()
     seattle = [item for item in result if item.title.startswith("Seattle wins by over")]
 
     assert len(seattle) == 1
@@ -86,6 +90,6 @@ def test_relevant_feed_preserves_same_family_across_providers(monkeypatch):
         ],
     )
 
-    result = relevant_markets(Response(), limit=100)
+    result = _relevant()
 
     assert {item.venue for item in result} == {"kalshi", "polymarket"}
