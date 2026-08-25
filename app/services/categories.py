@@ -41,6 +41,8 @@ _ECONOMY_PATTERNS = (
     r"\bcrypto\b", r"\bcrude oil\b", r"\bwti\b", r"\bnasdaq\b",
     r"\bs&p\b", r"\bstock market\b", r"\btreasur(?:y|ies)\b",
     r"\bcentral bank\b", r"\bmortgage\b", r"\bexchange rate\b",
+    r"\bgold\b", r"\bsilver\b", r"\bplatinum\b", r"\bpalladium\b",
+    r"\boil\b", r"\bcommodity\b", r"\bcommodities\b",
 )
 
 _TECH_PATTERNS = (
@@ -60,6 +62,11 @@ _SPORTS_PATTERNS = (
     r"\bnba\b", r"\bwnba\b", r"\bnfl\b", r"\bmlb\b", r"\bnhl\b",
     r"\bepl\b", r"\buefa\b", r"\blcs\b", r"\blck\b", r"\blpl\b",
     r"\bvct\b", r"\bdota 2\b", r"\bvalorant\b", r"\bwin on 20\d{2}-",
+    # Player/team proposition language frequently returned by Kalshi.
+    r"\bhits?\b", r"\brbis?\b", r"\bstolen bases?\b", r"\bhome runs?\b",
+    r"\brebounds?\b", r"\bassists?\b", r"\breceptions?\b", r"\btackles?\b",
+    r"\bsaves?\b", r"\bshots?\b", r"\byards?\b", r"\bsets?\b",
+    r"\bwins? by (?:over|more than|under|less than)\b",
 )
 
 
@@ -86,11 +93,12 @@ def _metadata_text(raw: Mapping[str, Any] | None) -> str:
     for key in (
         "category", "subcategory", "sport", "league", "series_ticker",
         "event_ticker", "sportsMarketType", "sports_market_type",
+        "_predibeacon_series_category",
     ):
         value = raw.get(key)
         if value:
             values.append(value)
-    for collection_key in ("events", "tags"):
+    for collection_key in ("events", "tags", "_predibeacon_series_tags"):
         collection = raw.get(collection_key)
         if isinstance(collection, list):
             for item in collection[:10]:
@@ -131,6 +139,11 @@ def classify_market_category(
     explicit = _provider_label(provider_category)
     if explicit:
         return explicit
+
+    if raw:
+        explicit_series = _provider_label(raw.get("_predibeacon_series_category"))
+        if explicit_series:
+            return explicit_series
 
     if raw and any(raw.get(key) for key in (
         "gameStartTime", "game_start_time", "gameId", "game_id",
