@@ -6,6 +6,7 @@ from app.middleware.alerts import register_alerts_middleware
 from app.middleware.clickjacking import register_clickjacking_middleware
 from app.middleware.control_plane_outbound import register_control_plane_outbound_middleware
 from app.middleware.home_card_outbound import register_home_card_outbound_middleware
+from app.middleware.home_client_dedup import register_home_client_dedup_middleware
 from app.middleware.home_event_grouping import register_home_event_grouping_middleware
 from app.middleware.home_platform_visibility import register_home_platform_visibility_middleware
 from app.middleware.market_intelligence import register_market_intelligence_middleware
@@ -48,6 +49,7 @@ app.include_router(contract_verification_router)
 app.include_router(creator_self_service_router)
 app.include_router(localization_router)
 app.include_router(pro_account_billing_router)
+app.include_router(commercial_intelligence_router)
 app.include_router(public_alert_signals_router)
 app.include_router(public_closing_soon_router)
 app.include_router(public_contract_verification_router)
@@ -67,6 +69,7 @@ register_public_seo_middleware(app)
 register_mobile_market_experience_middleware(app)
 register_home_card_outbound_middleware(app)
 register_home_event_grouping_middleware(app)
+register_home_client_dedup_middleware(app)
 register_control_plane_outbound_middleware(app)
 register_clickjacking_middleware(app)
 # Traffic records only successful public HTML page views.
