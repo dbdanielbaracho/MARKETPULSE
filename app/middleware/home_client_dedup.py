@@ -12,7 +12,8 @@ MIN_HOMEPAGE_RELEVANCE = 5.0
 MIN_HOMEPAGE_VOLUME_USD = 0.01
 MIN_TIME_TO_CLOSE = timedelta(hours=1)
 MAX_PER_SUBJECT_PER_VENUE = 2
-CURATION_VERSION = "quality-v2"
+CURATION_VERSION = "quality-v3"
+RENDER_CURATION_VERSION = "sync-v1"
 
 _THRESHOLD_PATTERNS = (
     re.compile(r"\b(above|below|over|under|more\s+than|less\s+than|at\s+least|at\s+most)\s+(?:us\$|\$|€|£)?\s*\d[\d,]*(?:\.\d+)?", re.I),
@@ -202,17 +203,14 @@ _SCRIPT = r'''<script>
     }
   };
 
-  let scheduled = false;
-  const schedule = () => {
-    if (scheduled) return;
-    scheduled = true;
-    requestAnimationFrame(() => { scheduled = false; dedup(); });
-  };
   const boot = () => {
     const grid = document.querySelector('#grid');
     if (!grid) return;
-    new MutationObserver(schedule).observe(grid, {childList: true, subtree: true, characterData: true});
-    schedule();
+    // Run in the MutationObserver microtask itself. Do not defer with
+    // requestAnimationFrame: the final DOM must be curated before paint and before
+    // acceptance tests or assistive technology can observe an uncurated frame.
+    new MutationObserver(() => dedup()).observe(grid, {childList: true, subtree: true, characterData: true});
+    dedup();
   };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, {once: true});
   else boot();
@@ -254,4 +252,5 @@ def register_home_client_dedup_middleware(app: FastAPI) -> None:
             return Response(content=raw, status_code=response.status_code, headers=headers, media_type=response.media_type)
         if "</body>" in body and "home-client-dedup" not in body:
             body = body.replace("</body>", "<!-- home-client-dedup -->" + _SCRIPT + "</body>")
+        headers["X-PrediBeacon-Render-Curation"] = RENDER_CURATION_VERSION
         return Response(content=body, status_code=response.status_code, headers=headers, media_type=response.media_type)
