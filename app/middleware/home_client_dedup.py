@@ -16,20 +16,38 @@ _SCRIPT = r'''<script>
     return s.replace(/\s+/g, ' ').trim();
   };
 
-  const numericVolume = (card) => {
-    const facts = [...card.querySelectorAll('.fact')];
-    const fact = facts.find(f => (f.childNodes[0]?.textContent || '').trim().toLowerCase().startsWith('volume'));
-    const text = fact?.querySelector('strong')?.textContent?.trim() || '';
+  const facts = (card) => [...card.querySelectorAll('.fact')];
+
+  const factValue = (card, labels) => {
+    const wanted = labels.map(label => label.toLowerCase());
+    const fact = facts(card).find((node) => {
+      const label = (node.childNodes[0]?.textContent || '').trim().toLowerCase();
+      return wanted.some(item => label.startsWith(item));
+    });
+    return fact?.querySelector('strong')?.textContent?.trim() || '';
+  };
+
+  const parseCompactNumber = (text) => {
     if (!text) return null;
-    const compact = text.replace(/\s/g, '').toUpperCase();
-    const match = compact.match(/^(?:US\$|\$)?([0-9]+(?:[.,][0-9]+)?)([KMB])?$/);
+    const compact = String(text).replace(/\s/g, '').toUpperCase();
+    const match = compact.match(/^(?:US\$|\$)?([0-9]+(?:[.,][0-9]+)?)(K|M|B|MIL|MI|BI)?(?:\/100)?$/);
     if (!match) return null;
     let value = Number(match[1].replace(',', '.'));
     if (!Number.isFinite(value)) return null;
-    if (match[2] === 'K') value *= 1_000;
-    if (match[2] === 'M') value *= 1_000_000;
-    if (match[2] === 'B') value *= 1_000_000_000;
+    const suffix = match[2] || '';
+    if (suffix === 'K' || suffix === 'MIL') value *= 1_000;
+    if (suffix === 'M' || suffix === 'MI') value *= 1_000_000;
+    if (suffix === 'B' || suffix === 'BI') value *= 1_000_000_000;
     return value;
+  };
+
+  const numericVolume = (card) => parseCompactNumber(factValue(card, ['volume']));
+  const numericRelevance = (card) => parseCompactNumber(factValue(card, ['relevance', 'relevância']));
+
+  const closesImmediately = (card) => {
+    const text = factValue(card, ['closes in', 'fecha em', 'closes']).toLowerCase();
+    if (!text) return false;
+    return /\b0\s*(?:hour|hours|hr|hrs|hora|horas)\b/.test(text);
   };
 
   const dedup = () => {
@@ -46,9 +64,12 @@ _SCRIPT = r'''<script>
       const exact = `${venue}|${title.toLowerCase().replace(/\s+/g,' ')}`;
       const family = `${venue}|${normalize(title)}`;
       const volume = numericVolume(card);
+      const relevance = numericRelevance(card);
       const inactive = volume !== null && volume <= 0;
+      const lowQuality = relevance !== null && relevance <= 0;
+      const staleClosing = closesImmediately(card);
       const duplicate = seenExact.has(exact) || seenFamily.has(family);
-      const hidden = inactive || duplicate;
+      const hidden = inactive || lowQuality || staleClosing || duplicate;
       if (card.hidden !== hidden) card.hidden = hidden;
       if (!hidden) {
         seenExact.add(exact);
@@ -60,9 +81,9 @@ _SCRIPT = r'''<script>
     const desiredCount = visible + (visible === 1 ? ' market' : ' markets');
     if (count && count.textContent !== desiredCount) count.textContent = desiredCount;
     const state = document.querySelector('#state');
-    if (state && visible === 0) {
-      state.hidden = false;
-      state.textContent = 'No actively traded markets match these filters.';
+    if (state) {
+      state.hidden = visible > 0;
+      if (visible === 0) state.textContent = 'No actively traded markets match these filters.';
     }
   };
 
