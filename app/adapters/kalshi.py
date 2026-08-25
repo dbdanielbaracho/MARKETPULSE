@@ -35,7 +35,6 @@ class KalshiAdapter:
         client: httpx.AsyncClient,
         markets: list[dict[str, Any]],
     ) -> None:
-        """Resolve missing series metadata from Kalshi's canonical Event endpoint."""
         missing_by_event: dict[str, list[dict[str, Any]]] = {}
         for item in markets:
             if not isinstance(item, dict) or str(item.get("series_ticker") or "").strip():
@@ -75,12 +74,6 @@ class KalshiAdapter:
         client: httpx.AsyncClient,
         markets: list[dict[str, Any]],
     ) -> None:
-        """Attach Kalshi's canonical series category/tags to market rows.
-
-        The markets endpoint does not reliably include a public category on every
-        contract. Public PrediBeacon filters therefore resolve the parent series
-        instead of guessing categories from arbitrary ticker strings.
-        """
         by_series: dict[str, list[dict[str, Any]]] = {}
         for item in markets:
             if not isinstance(item, dict):
@@ -141,6 +134,41 @@ class KalshiAdapter:
         return payload if isinstance(payload, dict) else {}
 
     @staticmethod
+    def _usd_notional_volume(item: dict[str, Any]) -> float | None:
+        """Return Kalshi lifetime traded volume in USD notional terms.
+
+        Kalshi exposes contract quantity as volume_fp and the per-contract
+        notional payout value as notional_value_dollars. Multiplying the two
+        produces a dollar-denominated notional volume, so PrediBeacon does not
+        compare contract counts against Polymarket's dollar volume.
+        """
+        raw_volume = item.get("volume_fp")
+        if raw_volume is None and isinstance(item.get("volume"), (int, float)):
+            raw_volume = item.get("volume")
+        if raw_volume is None:
+            return None
+        try:
+            contracts = float(raw_volume)
+        except (TypeError, ValueError):
+            return None
+
+        raw_notional = item.get("notional_value_dollars")
+        if raw_notional is None:
+            # Standard Kalshi binary contracts are dollar-notional contracts;
+            # retain a conservative $1 notional fallback only when the API omits
+            # the explicit field, rather than treating contract count as USD by
+            # accident.
+            notional = 1.0
+        else:
+            try:
+                notional = float(raw_notional)
+            except (TypeError, ValueError):
+                return None
+        if contracts < 0 or notional < 0:
+            return None
+        return contracts * notional
+
+    @staticmethod
     def normalize(item: dict[str, Any]) -> NormalizedMarket:
         probability = None
         yes_bid_dollars = item.get("yes_bid_dollars")
@@ -169,16 +197,7 @@ class KalshiAdapter:
             title=title,
             category=classify_market_category(title=title, provider_category=provider_category, raw=item),
             yes_probability=probability,
-            # Kalshi volume_fp is contract volume, not a USD monetary value. The
-            # current shared field is retained internally for activity ranking;
-            # the public card presentation labels Kalshi values as contracts.
-            volume_usd=(
-                float(item["volume_fp"])
-                if item.get("volume_fp") is not None
-                else float(item["volume"])
-                if isinstance(item.get("volume"), (int, float))
-                else None
-            ),
+            volume_usd=KalshiAdapter._usd_notional_volume(item),
             closes_at=closes_at,
             source_url=f"https://kalshi.com/markets/{series_ticker.lower()}" if series_ticker else None,
             raw=item,
