@@ -7,11 +7,29 @@ _SCRIPT = r'''<script>
 (() => {
   const normalize = (title) => {
     let s = String(title || '').toLowerCase().replace(/\s+/g, ' ').trim();
+    // Collapse explicit threshold ladders used by Kalshi/Polymarket.
+    s = s.replace(/\b(above|below|over|under|more\s+than|less\s+than|at\s+least|at\s+most)\s+(?:us\$|\$|€|£)?\s*\d[\d,]*(?:\.\d+)?/gi, '$1 <threshold>');
     s = s.replace(/(?:us\$|\$|€|£)?\s*\d[\d,]*(?:\.\d+)?\s*(?=(?:usd|eur|gbp|jpy|cad|aud|btc|eth)(?:\b|\/))/gi, '<threshold> ');
     s = s.replace(/\b\d+(?:\.\d+)?\+\s*(?=(?:hits?|runs?|rbis?|rbi|goals?|assists?|rebounds?|points?|stolen\s+bases?|bases?|strikeouts?|saves?|shots?|tackles?|receptions?|yards?)\b)/gi, '<threshold>+ ');
     s = s.replace(/\b(?:over|under|more\s+than|less\s+than|at\s+least|at\s+most)\s+\d+(?:\.\d+)?\s*(?=(?:runs?|goals?|points?|yards?|sets?|games?|rounds?)\b)/gi, '<threshold> ');
     s = s.replace(/\b\d[\d,]*(?:\.\d+)?\s*(?=(?:%|°[cf]|degrees?\b|ounces?\b|oz\b|barrels?\b|bbl\b))/gi, '<threshold> ');
     return s.replace(/\s+/g, ' ').trim();
+  };
+
+  const numericVolume = (card) => {
+    const facts = [...card.querySelectorAll('.fact')];
+    const fact = facts.find(f => (f.childNodes[0]?.textContent || '').trim().toLowerCase().startsWith('volume'));
+    const text = fact?.querySelector('strong')?.textContent?.trim() || '';
+    if (!text) return null;
+    const compact = text.replace(/\s/g, '').toUpperCase();
+    const match = compact.match(/^(?:US\$|\$)?([0-9]+(?:[.,][0-9]+)?)([KMB])?$/);
+    if (!match) return null;
+    let value = Number(match[1].replace(',', '.'));
+    if (!Number.isFinite(value)) return null;
+    if (match[2] === 'K') value *= 1_000;
+    if (match[2] === 'M') value *= 1_000_000;
+    if (match[2] === 'B') value *= 1_000_000_000;
+    return value;
   };
 
   const dedup = () => {
@@ -27,9 +45,12 @@ _SCRIPT = r'''<script>
       const venue = card.querySelector('.venue-badge')?.textContent?.trim().toLowerCase() || '';
       const exact = `${venue}|${title.toLowerCase().replace(/\s+/g,' ')}`;
       const family = `${venue}|${normalize(title)}`;
+      const volume = numericVolume(card);
+      const inactive = volume !== null && volume <= 0;
       const duplicate = seenExact.has(exact) || seenFamily.has(family);
-      if (card.hidden !== duplicate) card.hidden = duplicate;
-      if (!duplicate) {
+      const hidden = inactive || duplicate;
+      if (card.hidden !== hidden) card.hidden = hidden;
+      if (!hidden) {
         seenExact.add(exact);
         seenFamily.add(family);
         visible += 1;
@@ -38,6 +59,11 @@ _SCRIPT = r'''<script>
     const count = document.querySelector('#count');
     const desiredCount = visible + (visible === 1 ? ' market' : ' markets');
     if (count && count.textContent !== desiredCount) count.textContent = desiredCount;
+    const state = document.querySelector('#state');
+    if (state && visible === 0) {
+      state.hidden = false;
+      state.textContent = 'No actively traded markets match these filters.';
+    }
   };
 
   let scheduled = false;
