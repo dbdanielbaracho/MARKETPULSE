@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 import httpx
@@ -134,39 +135,40 @@ class KalshiAdapter:
         return payload if isinstance(payload, dict) else {}
 
     @staticmethod
+    def _decimal(value: Any) -> Decimal | None:
+        try:
+            return Decimal(str(value))
+        except (InvalidOperation, TypeError, ValueError):
+            return None
+
+    @staticmethod
     def _usd_notional_volume(item: dict[str, Any]) -> float | None:
         """Return Kalshi lifetime traded volume in USD notional terms.
 
         Kalshi exposes contract quantity as volume_fp and the per-contract
-        notional payout value as notional_value_dollars. Multiplying the two
-        produces a dollar-denominated notional volume, so PrediBeacon does not
-        compare contract counts against Polymarket's dollar volume.
+        notional payout value as notional_value_dollars. Decimal arithmetic is
+        used before converting to the public float model so provider decimal
+        strings do not create avoidable binary-rounding regressions.
         """
         raw_volume = item.get("volume_fp")
         if raw_volume is None and isinstance(item.get("volume"), (int, float)):
             raw_volume = item.get("volume")
         if raw_volume is None:
             return None
-        try:
-            contracts = float(raw_volume)
-        except (TypeError, ValueError):
+        contracts = KalshiAdapter._decimal(raw_volume)
+        if contracts is None:
             return None
 
         raw_notional = item.get("notional_value_dollars")
         if raw_notional is None:
-            # Standard Kalshi binary contracts are dollar-notional contracts;
-            # retain a conservative $1 notional fallback only when the API omits
-            # the explicit field, rather than treating contract count as USD by
-            # accident.
-            notional = 1.0
+            notional = Decimal("1")
         else:
-            try:
-                notional = float(raw_notional)
-            except (TypeError, ValueError):
+            notional = KalshiAdapter._decimal(raw_notional)
+            if notional is None:
                 return None
         if contracts < 0 or notional < 0:
             return None
-        return contracts * notional
+        return float(contracts * notional)
 
     @staticmethod
     def normalize(item: dict[str, Any]) -> NormalizedMarket:
@@ -174,14 +176,18 @@ class KalshiAdapter:
         yes_bid_dollars = item.get("yes_bid_dollars")
         yes_ask_dollars = item.get("yes_ask_dollars")
         if yes_bid_dollars is not None and yes_ask_dollars is not None:
-            probability = (float(yes_bid_dollars) + float(yes_ask_dollars)) / 2.0
+            bid = KalshiAdapter._decimal(yes_bid_dollars)
+            ask = KalshiAdapter._decimal(yes_ask_dollars)
+            if bid is not None and ask is not None:
+                probability = float((bid + ask) / Decimal("2"))
         else:
             yes_bid = item.get("yes_bid")
             yes_ask = item.get("yes_ask")
             if isinstance(yes_bid, (int, float)) and isinstance(yes_ask, (int, float)):
                 probability = ((float(yes_bid) + float(yes_ask)) / 2.0) / 100.0
             elif item.get("last_price_dollars") is not None:
-                probability = float(item["last_price_dollars"])
+                last_price = KalshiAdapter._decimal(item["last_price_dollars"])
+                probability = float(last_price) if last_price is not None else None
             elif isinstance(item.get("last_price"), (int, float)):
                 probability = float(item["last_price"]) / 100.0
 

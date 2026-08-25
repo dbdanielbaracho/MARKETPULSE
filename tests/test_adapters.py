@@ -141,6 +141,14 @@ class _KalshiEnrichmentClient(_RecordingClient):
                     "series_ticker": "KXMLBTEST",
                 }
             })
+        if url.endswith("/series/KXMLBTEST"):
+            return _FakeResponse({
+                "series": {
+                    "ticker": "KXMLBTEST",
+                    "category": "Sports",
+                    "tags": ["baseball"],
+                }
+            })
         raise AssertionError(f"unexpected URL: {url}")
 
 
@@ -180,3 +188,4 @@ def test_kalshi_fetch_enriches_missing_series_from_canonical_event(monkeypatch):
     assert len(markets) == 1
     assert str(markets[0].source_url) == "https://kalshi.com/markets/kxmlbtest"
     assert any(url.endswith("/events/KXMLBTEST-26AUG24") for url, _ in client.calls)
+    assert any(url.endswith("/series/KXMLBTEST") for url, _ in client.calls)
