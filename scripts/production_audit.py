@@ -5,7 +5,6 @@ import asyncio
 import re
 import sys
 import time
-from collections import Counter
 from urllib.parse import urlparse
 
 import httpx
@@ -185,7 +184,6 @@ class Audit:
             )
             markets = response.json() if response is not None and response.status_code == 200 else []
             self.require(bool(markets), "discovery API returned no markets")
-            Counter(item.get("category") for item in markets)
             for category in PUBLIC_CATEGORIES:
                 filtered = await self.get(
                     client,
