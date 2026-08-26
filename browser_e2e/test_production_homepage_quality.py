@@ -7,6 +7,11 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from app.middleware.home_client_dedup import (
+    CURATION_VERSION as EXPECTED_CURATION,
+    RENDER_CURATION_VERSION as EXPECTED_RENDER_CURATION,
+)
+
 pytest.importorskip("playwright.sync_api")
 from playwright.sync_api import sync_playwright
 
@@ -20,8 +25,6 @@ RAILWAY = os.getenv(
     "PREDIBEACON_RAILWAY_URL",
     "https://marketpulse-production-aa9f.up.railway.app",
 )
-EXPECTED_CURATION = "quality-v3"
-EXPECTED_RENDER_CURATION = "prerender-v2"
 MIN_RELEVANCE = 5.0
 MAX_PER_SUBJECT_PER_VENUE = 2
 
@@ -263,7 +266,9 @@ def test_browser_final_dom_is_curated_synchronously_across_interactions():
             assert response is not None and response.ok
             headers = {key.casefold(): value for key, value in response.headers.items()}
             assert headers.get("x-predibeacon-render-curation") == EXPECTED_RENDER_CURATION, headers
-            assert page.locator('script[data-predibeacon-render-curation="prerender-v2"]').count() == 1
+            assert page.locator(
+                f'script[data-predibeacon-render-curation="{EXPECTED_RENDER_CURATION}"]'
+            ).count() == 1
             _wait_for_market_render(page)
             _assert_visible_cards(page, label="default")
 
