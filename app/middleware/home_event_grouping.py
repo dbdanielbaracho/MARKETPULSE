@@ -12,6 +12,10 @@ from starlette.responses import Response
 # homepage card makes the product look duplicated. This middleware groups
 # obvious ladders for the public discovery endpoint only; every individual
 # contract remains available by its canonical market URL and ID.
+_COMPARATIVE_THRESHOLD = re.compile(
+    r"\b(above|below|over|under|more\s+than|less\s+than|at\s+least|at\s+most)\s+(?:US\$|\$|€|£)?\s*\d[\d,]*(?:\.\d+)?",
+    re.IGNORECASE,
+)
 _CURRENCY_THRESHOLD = re.compile(
     r"(?<![\w])(?:US\$|\$|€|£)?\s*\d[\d,]*(?:\.\d+)?\s*(?=(?:USD|EUR|GBP|JPY|CAD|AUD|BTC|ETH)(?:\b|/))",
     re.IGNORECASE,
@@ -45,6 +49,10 @@ def _normalized_title(title: str) -> str:
 
 def _family_title(title: str) -> str:
     normalized = title.casefold()
+    # Comparative price ladders often omit an explicit currency code, e.g.
+    # "Bitcoin above $111,000". Normalize the comparator+number first so
+    # public relevance, discovery, and production audits share one family.
+    normalized = _COMPARATIVE_THRESHOLD.sub(r"\1 <threshold>", normalized)
     normalized = _CURRENCY_THRESHOLD.sub(" <threshold> ", normalized)
     normalized = _UNIT_THRESHOLD.sub(" <threshold> ", normalized)
     normalized = _PLUS_STAT_THRESHOLD.sub("<threshold>+ ", normalized)
