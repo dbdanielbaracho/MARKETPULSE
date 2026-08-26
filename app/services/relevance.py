@@ -45,7 +45,7 @@ def relevance_score(market: RelevanceMarket, *, now: datetime | None = None) -> 
     if movement_component >= 15:
         reasons.append((movement_component, f"meaningful probability move ({movement_points:.1f} pts)"))
     elif raw_movement_component >= 15 and movement_confidence < 1.0:
-        reasons.append((movement_component, "probability move discounted because reported activity is thin"))
+        reasons.append((raw_movement_component, "probability move discounted because reported activity is thin"))
 
     activity_component = 0.0
     if volume > 0:
