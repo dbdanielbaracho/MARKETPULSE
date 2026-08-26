@@ -21,6 +21,8 @@ class MarketSignal:
     canonical_id: str
     probability: float | None
     probability_change: float | None
+    # Current signal activity in USD/notional terms. Prefer trailing 24h when
+    # available; lifetime volume is retained on MarketSnapshot for history.
     volume_usd: float | None
     trend_score: float
     volume_24h_usd: float | None = None
@@ -85,11 +87,12 @@ def trend_score(current: MarketSnapshot, previous: MarketSnapshot | None) -> flo
 
 
 def signal(current: MarketSnapshot, previous: MarketSnapshot | None = None) -> MarketSignal:
+    activity_usd = current_activity_usd(current)
     return MarketSignal(
         canonical_id=current.canonical_id,
         probability=current.probability,
         probability_change=probability_change(current, previous),
-        volume_usd=current.volume_usd,
+        volume_usd=activity_usd,
         trend_score=trend_score(current, previous),
         volume_24h_usd=current.volume_24h_usd,
     )
