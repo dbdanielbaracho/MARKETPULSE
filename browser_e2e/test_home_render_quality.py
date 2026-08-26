@@ -12,6 +12,8 @@ from urllib.request import urlopen
 
 import pytest
 
+from app.middleware.home_client_dedup import RENDER_CURATION_VERSION
+
 pytest.importorskip("playwright.sync_api")
 from playwright.sync_api import Route, sync_playwright
 
@@ -80,6 +82,7 @@ def test_uncurated_api_payload_can_never_be_observed_as_uncurated_dom():
         _market("Will the price of Bitcoin be above $111,000 on August 25?", "polymarket:btc111"),
         _market("Will the price of Bitcoin be above $109,000 on August 25?", "polymarket:btc109"),
         _market("Zero volume leak", "polymarket:zero", volume=0.0),
+        _market("Chicago WS wins by over 9.5 runs?", "kalshi:thin", volume=1.0),
         _market("Low relevance leak", "polymarket:low", relevance=2.0),
         _market("Independent quality market", "polymarket:good"),
     ]
@@ -94,7 +97,7 @@ def test_uncurated_api_payload_can_never_be_observed_as_uncurated_dom():
         def handler(route: Route):
             url = route.request.url
             if "/api/v1/status" in url:
-                return _fulfill_json(route, {"freshness": "fresh", "venue_market_counts": {"kalshi": 0, "polymarket": 5}})
+                return _fulfill_json(route, {"freshness": "fresh", "venue_market_counts": {"kalshi": 1, "polymarket": 5}})
             if "/api/v1/compare/pairs" in url:
                 return _fulfill_json(route, {"pairs": []})
             if "/api/v1/markets" in url:
@@ -105,8 +108,8 @@ def test_uncurated_api_payload_can_never_be_observed_as_uncurated_dom():
         try:
             response = page.goto(base + "/", wait_until="domcontentloaded")
             assert response is not None and response.ok
-            assert response.headers.get("x-predibeacon-render-curation") == "prerender-v3"
-            assert page.locator('script[data-predibeacon-render-curation="prerender-v3"]').count() == 1
+            assert response.headers.get("x-predibeacon-render-curation") == RENDER_CURATION_VERSION
+            assert page.locator(f'script[data-predibeacon-render-curation="{RENDER_CURATION_VERSION}"]').count() == 1
             page.wait_for_function("!document.querySelector('#count').textContent.includes('Loading')")
 
             visible_titles = page.locator("#grid .card:visible h3").all_text_contents()
@@ -114,6 +117,7 @@ def test_uncurated_api_payload_can_never_be_observed_as_uncurated_dom():
             assert "Will the price of Bitcoin be above $111,000 on August 25?" in visible_titles
             assert "Will the price of Bitcoin be above $109,000 on August 25?" not in visible_titles
             assert "Zero volume leak" not in visible_titles
+            assert "Chicago WS wins by over 9.5 runs?" not in visible_titles
             assert "Low relevance leak" not in visible_titles
             assert "Independent quality market" in visible_titles
             assert page.locator("#count").text_content() == "2 markets"
