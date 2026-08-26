@@ -12,7 +12,13 @@ class NormalizedMarket(BaseModel):
     title: str = Field(min_length=1)
     category: str | None = None
     yes_probability: float | None = Field(default=None, ge=0.0, le=1.0)
+    # Lifetime/notional traded volume normalized to USD terms when the provider
+    # exposes enough information to do so.
     volume_usd: float | None = Field(default=None, ge=0.0)
+    # Provider-reported trailing 24h activity normalized to USD/notional terms.
+    # This is deliberately distinct from lifetime volume because public
+    # Discovery promises what deserves attention "now".
+    volume_24h_usd: float | None = Field(default=None, ge=0.0)
     closes_at: datetime | None = None
     source_url: HttpUrl | None = None
     observed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

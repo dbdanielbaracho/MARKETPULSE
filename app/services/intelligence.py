@@ -13,6 +13,7 @@ class MarketSnapshot:
     probability: float | None
     volume_usd: float | None
     observed_at: datetime
+    volume_24h_usd: float | None = None
 
 
 @dataclass(frozen=True)
@@ -20,8 +21,11 @@ class MarketSignal:
     canonical_id: str
     probability: float | None
     probability_change: float | None
+    # Current signal activity in USD/notional terms. Prefer trailing 24h when
+    # available; lifetime volume is retained on MarketSnapshot for history.
     volume_usd: float | None
     trend_score: float
+    volume_24h_usd: float | None = None
 
 
 @dataclass(frozen=True)
@@ -53,6 +57,7 @@ def snapshot(market: NormalizedMarket) -> MarketSnapshot:
         probability=market.yes_probability,
         volume_usd=market.volume_usd,
         observed_at=market.observed_at,
+        volume_24h_usd=market.volume_24h_usd,
     )
 
 
@@ -62,21 +67,34 @@ def probability_change(current: MarketSnapshot, previous: MarketSnapshot | None)
     return current.probability - previous.probability
 
 
+def current_activity_usd(current: MarketSnapshot) -> float | None:
+    """Prefer provider trailing-24h activity for 'now' ranking.
+
+    Lifetime volume remains available as context/history. It is only a fallback for
+    older fixtures/providers where a trailing-24h field is genuinely unavailable.
+    A reported 24h value of zero is meaningful and MUST NOT fall back to lifetime.
+    """
+    return current.volume_24h_usd if current.volume_24h_usd is not None else current.volume_usd
+
+
 def trend_score(current: MarketSnapshot, previous: MarketSnapshot | None) -> float:
-    """Bounded discovery score using the shared activity-confidence contract."""
+    """Bounded current discovery score using recent activity when the provider supplies it."""
     change = probability_change(current, previous)
-    movement = movement_component(change, current.volume_usd, max_points=70.0)
-    activity = activity_component(current.volume_usd, max_points=30.0)
+    activity_usd = current_activity_usd(current)
+    movement = movement_component(change, activity_usd, max_points=70.0)
+    activity = activity_component(activity_usd, max_points=30.0)
     return round(min(100.0, movement + activity), 2)
 
 
 def signal(current: MarketSnapshot, previous: MarketSnapshot | None = None) -> MarketSignal:
+    activity_usd = current_activity_usd(current)
     return MarketSignal(
         canonical_id=current.canonical_id,
         probability=current.probability,
         probability_change=probability_change(current, previous),
-        volume_usd=current.volume_usd,
+        volume_usd=activity_usd,
         trend_score=trend_score(current, previous),
+        volume_24h_usd=current.volume_24h_usd,
     )
 
 
@@ -161,7 +179,7 @@ def consensus(left_probability: float, right_probability: float, *, equivalent_c
 
 
 def attention_score(*, trend_score_value: float, probability_change_value: float | None, volume_usd: float | None, hours_to_close: float | None) -> int:
-    """Rank attention with the same activity-confidence contract used by trend_score."""
+    """Rank attention with the same current-activity confidence contract used by trend_score."""
     score = max(0.0, min(70.0, trend_score_value * 0.7))
     score += movement_component(probability_change_value, volume_usd, max_points=15.0)
     score += activity_component(volume_usd, max_points=10.0)

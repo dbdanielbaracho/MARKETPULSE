@@ -4,8 +4,14 @@ from app.services.intelligence import MarketSnapshot, attention_score, probabili
 from app.storage.snapshots import SnapshotStore
 
 
-def make_snapshot(probability: float, volume: float, minute: int = 0) -> MarketSnapshot:
-    return MarketSnapshot("kalshi:TEST", probability, volume, datetime(2026, 8, 21, 20, minute, tzinfo=timezone.utc))
+def make_snapshot(probability: float, volume: float, minute: int = 0, volume_24h: float | None = None) -> MarketSnapshot:
+    return MarketSnapshot(
+        "kalshi:TEST",
+        probability,
+        volume,
+        datetime(2026, 8, 21, 20, minute, tzinfo=timezone.utc),
+        volume_24h,
+    )
 
 
 def test_probability_change_is_percentage_point_delta():
@@ -30,6 +36,23 @@ def test_trend_score_discounts_same_move_when_activity_is_thin():
     active = make_snapshot(0.62, 100000, 1)
     assert trend_score(thin, previous) < trend_score(active, previous)
     assert trend_score(thin, previous) < 30
+
+
+def test_lifetime_volume_cannot_fake_current_activity_when_24h_is_reported():
+    previous = make_snapshot(0.50, 10_000_000, 0, volume_24h=0)
+    dormant = make_snapshot(0.62, 10_000_000, 1, volume_24h=0)
+    active = make_snapshot(0.62, 10_000_000, 1, volume_24h=100_000)
+    assert trend_score(dormant, previous) == 0
+    assert trend_score(active, previous) > trend_score(dormant, previous)
+    assert signal(dormant, previous).volume_usd == 0
+    assert signal(active, previous).volume_usd == 100_000
+
+
+def test_missing_24h_field_falls_back_to_lifetime_for_legacy_provider_fixture():
+    previous = make_snapshot(0.50, 100_000, 0)
+    current = make_snapshot(0.62, 100_000, 1)
+    assert trend_score(current, previous) > 0
+    assert signal(current, previous).volume_usd == 100_000
 
 
 def test_attention_score_uses_same_activity_confidence_as_trend():

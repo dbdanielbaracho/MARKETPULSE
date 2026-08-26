@@ -49,6 +49,28 @@ def test_polymarket_normalizes_string_prices():
     assert market.yes_probability == 0.67
 
 
+def test_polymarket_preserves_lifetime_and_24h_volume_as_distinct_provider_fields():
+    market = PolymarketAdapter.normalize({
+        "id": "42-volume",
+        "question": "Separate activity periods",
+        "volumeNum": 2_000_000,
+        "volume24hr": 12_345.67,
+    })
+    assert market.volume_usd == 2_000_000
+    assert market.volume_24h_usd == 12_345.67
+
+
+def test_polymarket_zero_24h_activity_is_preserved_not_treated_as_missing():
+    market = PolymarketAdapter.normalize({
+        "id": "42-zero",
+        "question": "Dormant today",
+        "volumeNum": 2_000_000,
+        "volume24hr": 0,
+    })
+    assert market.volume_usd == 2_000_000
+    assert market.volume_24h_usd == 0
+
+
 def test_polymarket_uses_parent_event_slug_for_destination():
     market = PolymarketAdapter.normalize({
         "id": "3595811",
@@ -89,10 +111,24 @@ def test_kalshi_normalizes_current_decimal_fields():
         "yes_ask_dollars": "0.6600",
         "last_price_dollars": "0.6500",
         "volume_fp": "1234.50",
+        "volume_24h_fp": "321.25",
         "close_time": "2026-09-18T18:00:00Z",
     })
     assert market.yes_probability == 0.65
     assert market.volume_usd == 1234.5
+    assert market.volume_24h_usd == 321.25
+
+
+def test_kalshi_contract_counts_are_converted_with_provider_notional_value():
+    market = KalshiAdapter.normalize({
+        "ticker": "NOTIONAL",
+        "title": "Notional conversion",
+        "volume_fp": "1000",
+        "volume_24h_fp": "250",
+        "notional_value_dollars": "0.50",
+    })
+    assert market.volume_usd == 500
+    assert market.volume_24h_usd == 125
 
 
 class _FakeResponse:

@@ -141,7 +141,7 @@ def _install_api_mock(page: Page, state: str = "normal") -> list[str]:
                 return _json(route, {"detail": "down"}, 503)
             selected = [] if state == "empty" else MARKETS[:3]
             return _json(route, selected)
-        if "/api/v1/markets" in url:
+        if "/api/v1/discovery" in url:
             if state == "error":
                 return _json(route, {"detail": "down"}, 503)
             if state == "empty":
@@ -226,7 +226,7 @@ def test_every_platform_sort_category_combination_emits_correct_query(base_url):
             from urllib.parse import parse_qs, urlsplit
 
             def matches(url: str, platform: str, sort: str, category: str) -> bool:
-                if "/api/v1/markets" not in url or "closing-soon" in url:
+                if "/api/v1/discovery" not in url:
                     return False
                 q = parse_qs(urlsplit(url).query)
                 return (
@@ -297,7 +297,9 @@ def test_data_states_never_freeze_browser(base_url, state):
             if state == "normal":
                 page.wait_for_function("document.querySelectorAll('#grid .card').length > 0")
             elif state == "empty":
-                expect(page.locator("#state")).to_contain_text("No markets")
+                expect(page.locator("#state")).to_have_text(
+                    "No market currently meets PrediBeacon's documented attention criteria for these filters."
+                )
             elif state == "error":
                 expect(page.locator("#count")).not_to_have_text("Loading…")
             assert not errors
