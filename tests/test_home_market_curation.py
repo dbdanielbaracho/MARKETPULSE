@@ -6,6 +6,7 @@ from app.middleware.home_client_dedup import (
     CURATION_VERSION,
     MAX_PER_SUBJECT_PER_VENUE,
     MIN_HOMEPAGE_RELEVANCE,
+    MIN_HOMEPAGE_VOLUME_USD,
     RENDER_CURATION_VERSION,
     _curate_market_payload,
     _family_title,
@@ -76,6 +77,30 @@ def test_minimum_relevance_boundary_is_explicit_and_stable():
     rejected = market("Below threshold", trend_score=MIN_HOMEPAGE_RELEVANCE - 0.001)
     accepted = market("At threshold", trend_score=MIN_HOMEPAGE_RELEVANCE)
     assert titles(_curate_market_payload([rejected, accepted], now=NOW)) == ["At threshold"]
+
+
+def test_minimum_material_activity_boundary_is_explicit_and_stable():
+    rejected = market("Below activity threshold", volume_usd=MIN_HOMEPAGE_VOLUME_USD - 0.01)
+    accepted = market("At activity threshold", volume_usd=MIN_HOMEPAGE_VOLUME_USD)
+    assert titles(_curate_market_payload([rejected, accepted], now=NOW)) == ["At activity threshold"]
+
+
+def test_regression_real_one_dollar_large_mover_is_not_homepage_quality():
+    escaped = market(
+        "Chicago WS wins by over 9.5 runs?",
+        probability=0.14,
+        probability_change=-0.285,
+        volume_usd=1.0,
+        trend_score=70.0,
+    )
+    material = market(
+        "Materially active comparison market",
+        probability_change=-0.05,
+        volume_usd=5000.0,
+        trend_score=40.0,
+    )
+
+    assert titles(_curate_market_payload([escaped, material], now=NOW)) == ["Materially active comparison market"]
 
 
 def test_quality_gate_collapses_threshold_ladders_from_same_provider():
@@ -180,5 +205,5 @@ def test_curation_does_not_mutate_source_objects():
 
 
 def test_curation_versions_are_explicit_for_production_verification():
-    assert CURATION_VERSION == "quality-v4"
-    assert RENDER_CURATION_VERSION == "prerender-v3"
+    assert CURATION_VERSION == "quality-v5"
+    assert RENDER_CURATION_VERSION == "prerender-v4"
