@@ -113,7 +113,8 @@ _SEMANTIC_SCRIPT = r'''<script data-predibeacon-semantic-discovery="semantic-dis
     const count = document.querySelector('#count');
     if (!state || !count) return;
     const zero = /^0\s/.test((count.textContent || '').trim());
-    if (zero && !state.hidden) state.textContent = dictionary().empty;
+    const target = dictionary().empty;
+    if (zero && !state.hidden && state.textContent !== target) state.textContent = target;
   };
   const state = document.querySelector('#state');
   const count = document.querySelector('#count');
