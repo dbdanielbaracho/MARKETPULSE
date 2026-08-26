@@ -85,6 +85,21 @@ class PolymarketAdapter:
         return None
 
     @staticmethod
+    def _number(value: Any) -> float | None:
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, (int, float)):
+            number = float(value)
+        elif isinstance(value, str):
+            try:
+                number = float(value)
+            except ValueError:
+                return None
+        else:
+            return None
+        return number if number >= 0 else None
+
+    @staticmethod
     def normalize(item: dict[str, Any]) -> NormalizedMarket:
         probability = None
         prices = item.get("outcomePrices")
@@ -122,7 +137,9 @@ class PolymarketAdapter:
             title=title,
             category=classify_market_category(title=title, provider_category=item.get("category"), raw=item),
             yes_probability=probability,
-            volume_usd=float(item["volumeNum"]) if isinstance(item.get("volumeNum"), (int, float)) else None,
+            # Gamma exposes numeric lifetime and trailing-24h volume separately.
+            volume_usd=PolymarketAdapter._number(item.get("volumeNum")),
+            volume_24h_usd=PolymarketAdapter._number(item.get("volume24hr")),
             closes_at=closes_at,
             source_url=f"https://polymarket.com/event/{destination_slug}" if destination_slug else None,
             raw=item,
