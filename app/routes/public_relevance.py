@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Query, Response
 
 import app.main as core
+from app.middleware.home_client_dedup import MIN_HOMEPAGE_VOLUME_USD
 from app.middleware.home_event_grouping import _family_title
 from app.services.relevance import relevance_score
 
@@ -30,10 +31,10 @@ def _is_homepage_quality_market(market: core.DiscoveryMarket, *, now: datetime) 
     """Fail closed for the homepage discovery feed.
 
     A market can be a valid provider contract and still be unsuitable for the
-    homepage. The public relevant feed must not expose zero/unknown activity,
-    zero attention, or contracts that are effectively closing now.
+    homepage. The public relevant feed must not expose materially thin/unknown
+    activity, zero attention, or contracts that are effectively closing now.
     """
-    if market.volume_usd is None or market.volume_usd <= 0:
+    if market.volume_usd is None or market.volume_usd < MIN_HOMEPAGE_VOLUME_USD:
         return False
     if market.trend_score <= 0:
         return False
