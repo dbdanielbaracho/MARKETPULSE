@@ -30,6 +30,7 @@ from app.routes.pro_account_billing import router as pro_account_billing_router
 from app.routes.public_alert_signals import router as public_alert_signals_router
 from app.routes.public_closing_soon import router as public_closing_soon_router
 from app.routes.public_contract_verification import router as public_contract_verification_router
+from app.routes.public_discovery import router as public_discovery_router
 from app.routes.public_execution_quality import router as public_execution_quality_router
 from app.routes.public_market_comparison import router as public_market_comparison_router
 from app.routes.public_pro import router as public_pro_router
@@ -53,6 +54,7 @@ app.include_router(pro_account_billing_router)
 app.include_router(public_alert_signals_router)
 app.include_router(public_closing_soon_router)
 app.include_router(public_contract_verification_router)
+app.include_router(public_discovery_router)
 app.include_router(public_execution_quality_router)
 app.include_router(public_market_comparison_router)
 app.include_router(public_pro_router)
@@ -70,9 +72,9 @@ register_mobile_market_experience_middleware(app)
 register_home_card_outbound_middleware(app)
 register_home_event_grouping_middleware(app)
 register_home_client_dedup_middleware(app)
-# DMU-SEM-001 / DMU-RCG-001: semantic product truth is an outer response gate
-# over the legacy technical curation so valid-but-weak inventory cannot be
-# presented as a market that "deserves attention".
+# DMU-SEM-001 / DMU-RCG-001: public intelligence surfaces consume the
+# dedicated semantic Discovery contract instead of conflating it with monitored
+# inventory. The middleware also owns localized dynamic explanations/empty state.
 register_semantic_discovery_middleware(app)
 register_control_plane_outbound_middleware(app)
 register_clickjacking_middleware(app)
