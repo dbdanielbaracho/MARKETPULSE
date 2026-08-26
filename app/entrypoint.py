@@ -14,6 +14,7 @@ from app.middleware.mobile_market_experience import register_mobile_market_exper
 from app.middleware.public_locale import register_public_locale_middleware
 from app.middleware.public_seo import register_public_seo_middleware
 from app.middleware.relevance_pages import register_relevance_pages_middleware
+from app.middleware.semantic_discovery import register_semantic_discovery_middleware
 from app.middleware.traffic import register_traffic_middleware
 from app.routes.admin_control_plane import router as admin_control_plane_router
 from app.routes.admin_creator_agreements import router as admin_creator_agreements_router
@@ -69,6 +70,10 @@ register_mobile_market_experience_middleware(app)
 register_home_card_outbound_middleware(app)
 register_home_event_grouping_middleware(app)
 register_home_client_dedup_middleware(app)
+# DMU-SEM-001 / DMU-RCG-001: semantic product truth is an outer response gate
+# over the legacy technical curation so valid-but-weak inventory cannot be
+# presented as a market that "deserves attention".
+register_semantic_discovery_middleware(app)
 register_control_plane_outbound_middleware(app)
 register_clickjacking_middleware(app)
 # Traffic records only successful public HTML page views.
