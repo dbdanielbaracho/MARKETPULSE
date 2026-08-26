@@ -48,9 +48,13 @@ def register_semantic_discovery_middleware(app: FastAPI) -> None:
         chunks = [chunk async for chunk in response.body_iterator]
         raw = b"".join(chunk if isinstance(chunk, bytes) else chunk.encode("utf-8") for chunk in chunks)
         text = raw.decode("utf-8", errors="replace")
-        # Public intelligence surfaces consume curated Discovery, while the
-        # monitored inventory contract remains available at /api/v1/markets.
+        # Public intelligence surfaces consume curated Discovery, while monitored
+        # inventory remains available at /api/v1/markets.
         text = text.replace("/api/v1/markets?", "/api/v1/discovery?")
+        # The card label is product relevance in the localized public experience;
+        # render the same semantic oracle used for eligibility, not the lower-level
+        # movement/activity trend score.
+        text = text.replace("Math.round(m.trend_score)", "Math.round(m.relevance_score??m.trend_score)")
         if 'data-predibeacon-semantic-discovery="semantic-discovery-v1"' not in text:
             text = text.replace("</body>", _SEMANTIC_SCRIPT + "</body>")
         headers = dict(response.headers)
