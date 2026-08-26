@@ -297,7 +297,9 @@ def test_data_states_never_freeze_browser(base_url, state):
             if state == "normal":
                 page.wait_for_function("document.querySelectorAll('#grid .card').length > 0")
             elif state == "empty":
-                expect(page.locator("#state")).to_contain_text("No markets")
+                expect(page.locator("#state")).to_have_text(
+                    "No market currently meets PrediBeacon's documented attention criteria for these filters."
+                )
             elif state == "error":
                 expect(page.locator("#count")).not_to_have_text("Loading…")
             assert not errors
