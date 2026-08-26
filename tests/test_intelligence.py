@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
-from app.services.intelligence import MarketSnapshot, probability_change, signal, trend_score
+from app.services.intelligence import MarketSnapshot, attention_score, probability_change, signal, trend_score
 from app.storage.snapshots import SnapshotStore
 
 
@@ -22,6 +22,30 @@ def test_trend_score_is_bounded():
     current = make_snapshot(1.0, 999999)
     previous = make_snapshot(0.0, 0)
     assert trend_score(current, previous) == 100.0
+
+
+def test_trend_score_discounts_same_move_when_activity_is_thin():
+    previous = make_snapshot(0.50, 100000, 0)
+    thin = make_snapshot(0.62, 275, 1)
+    active = make_snapshot(0.62, 100000, 1)
+    assert trend_score(thin, previous) < trend_score(active, previous)
+    assert trend_score(thin, previous) < 30
+
+
+def test_attention_score_uses_same_activity_confidence_as_trend():
+    thin = attention_score(
+        trend_score_value=20,
+        probability_change_value=-0.12,
+        volume_usd=275,
+        hours_to_close=48,
+    )
+    active = attention_score(
+        trend_score_value=20,
+        probability_change_value=-0.12,
+        volume_usd=100000,
+        hours_to_close=48,
+    )
+    assert thin < active
 
 
 def test_snapshot_store_returns_previous(tmp_path):

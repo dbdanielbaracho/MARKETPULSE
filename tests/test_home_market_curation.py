@@ -99,7 +99,6 @@ def test_regression_real_one_dollar_large_mover_is_not_homepage_quality():
         volume_usd=5000.0,
         trend_score=40.0,
     )
-
     assert titles(_curate_market_payload([escaped, material], now=NOW)) == ["Materially active comparison market"]
 
 
@@ -205,5 +204,5 @@ def test_curation_does_not_mutate_source_objects():
 
 
 def test_curation_versions_are_explicit_for_production_verification():
-    assert CURATION_VERSION == "quality-v5"
-    assert RENDER_CURATION_VERSION == "prerender-v4"
+    assert CURATION_VERSION == "quality-v6"
+    assert RENDER_CURATION_VERSION == "prerender-v5"
