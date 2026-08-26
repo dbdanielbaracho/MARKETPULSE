@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from math import log10
 
 from app.domain.markets import NormalizedMarket
+from app.services.ranking import activity_component, movement_component
 
 
 @dataclass(frozen=True)
@@ -63,12 +63,11 @@ def probability_change(current: MarketSnapshot, previous: MarketSnapshot | None)
 
 
 def trend_score(current: MarketSnapshot, previous: MarketSnapshot | None) -> float:
-    """Bounded discovery score; it is not financial advice or expected return."""
+    """Bounded discovery score using the shared activity-confidence contract."""
     change = probability_change(current, previous)
-    movement_component = min(abs(change or 0.0) / 0.20, 1.0) * 70.0
-    volume = current.volume_usd or 0.0
-    volume_component = min(volume / 100_000.0, 1.0) * 30.0
-    return round(movement_component + volume_component, 2)
+    movement = movement_component(change, current.volume_usd, max_points=70.0)
+    activity = activity_component(current.volume_usd, max_points=30.0)
+    return round(min(100.0, movement + activity), 2)
 
 
 def signal(current: MarketSnapshot, previous: MarketSnapshot | None = None) -> MarketSignal:
@@ -162,11 +161,10 @@ def consensus(left_probability: float, right_probability: float, *, equivalent_c
 
 
 def attention_score(*, trend_score_value: float, probability_change_value: float | None, volume_usd: float | None, hours_to_close: float | None) -> int:
-    """Rank attention without representing expected return, liquidity, or outcome confidence."""
+    """Rank attention with the same activity-confidence contract used by trend_score."""
     score = max(0.0, min(70.0, trend_score_value * 0.7))
-    score += min(15.0, abs(probability_change_value or 0.0) * 100 * 0.75)
-    if volume_usd and volume_usd > 0:
-        score += min(10.0, max(2.0, log10(volume_usd + 1) * 1.8))
+    score += movement_component(probability_change_value, volume_usd, max_points=15.0)
+    score += activity_component(volume_usd, max_points=10.0)
     if hours_to_close is not None and 0 < hours_to_close <= 72:
         score += 5
     return round(min(100.0, score))
