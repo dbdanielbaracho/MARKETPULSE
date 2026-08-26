@@ -86,6 +86,9 @@ def test_uncurated_api_payload_can_never_be_observed_as_uncurated_dom():
         _market("Low relevance leak", "polymarket:low", relevance=2.0),
         _market("Independent quality market", "polymarket:good"),
     ]
+    # The inventory contract may contain weak and duplicate candidates. The
+    # semantic Discovery contract is the only payload the homepage may render.
+    curated = [payload[0], payload[-1]]
 
     with _server() as base, sync_playwright() as playwright:
         browser = playwright.chromium.launch()
@@ -100,6 +103,8 @@ def test_uncurated_api_payload_can_never_be_observed_as_uncurated_dom():
                 return _fulfill_json(route, {"freshness": "fresh", "venue_market_counts": {"kalshi": 1, "polymarket": 5}})
             if "/api/v1/compare/pairs" in url:
                 return _fulfill_json(route, {"pairs": []})
+            if "/api/v1/discovery" in url:
+                return _fulfill_json(route, curated)
             if "/api/v1/markets" in url:
                 return _fulfill_json(route, payload)
             return route.continue_()
