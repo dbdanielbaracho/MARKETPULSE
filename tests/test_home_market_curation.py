@@ -180,5 +180,5 @@ def test_curation_does_not_mutate_source_objects():
 
 
 def test_curation_versions_are_explicit_for_production_verification():
-    assert CURATION_VERSION == "quality-v3"
-    assert RENDER_CURATION_VERSION == "prerender-v2"
+    assert CURATION_VERSION == "quality-v4"
+    assert RENDER_CURATION_VERSION == "prerender-v3"
