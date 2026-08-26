@@ -142,17 +142,17 @@ class KalshiAdapter:
             return None
 
     @staticmethod
-    def _usd_notional_volume(item: dict[str, Any]) -> float | None:
-        """Return Kalshi lifetime traded volume in USD notional terms.
+    def _usd_notional_volume_field(item: dict[str, Any], field: str, *, legacy_field: str | None = None) -> float | None:
+        """Convert Kalshi contract quantity into USD maximum-payout notional.
 
-        Kalshi exposes contract quantity as volume_fp and the per-contract
-        notional payout value as notional_value_dollars. Decimal arithmetic is
-        used before converting to the public float model so provider decimal
-        strings do not create avoidable binary-rounding regressions.
+        Kalshi's official schema exposes contract quantities (`volume_fp`,
+        `volume_24h_fp`) separately from `notional_value_dollars`. Keeping this
+        conversion explicit prevents contract counts from being silently labeled
+        as raw USD turnover.
         """
-        raw_volume = item.get("volume_fp")
-        if raw_volume is None and isinstance(item.get("volume"), (int, float)):
-            raw_volume = item.get("volume")
+        raw_volume = item.get(field)
+        if raw_volume is None and legacy_field and isinstance(item.get(legacy_field), (int, float)):
+            raw_volume = item.get(legacy_field)
         if raw_volume is None:
             return None
         contracts = KalshiAdapter._decimal(raw_volume)
@@ -161,6 +161,8 @@ class KalshiAdapter:
 
         raw_notional = item.get("notional_value_dollars")
         if raw_notional is None:
+            # Standard Kalshi binary contracts pay at most $1 per contract. Keep
+            # legacy compatibility for payloads that omit the explicit notional.
             notional = Decimal("1")
         else:
             notional = KalshiAdapter._decimal(raw_notional)
@@ -169,6 +171,14 @@ class KalshiAdapter:
         if contracts < 0 or notional < 0:
             return None
         return float(contracts * notional)
+
+    @staticmethod
+    def _usd_notional_volume(item: dict[str, Any]) -> float | None:
+        return KalshiAdapter._usd_notional_volume_field(item, "volume_fp", legacy_field="volume")
+
+    @staticmethod
+    def _usd_notional_volume_24h(item: dict[str, Any]) -> float | None:
+        return KalshiAdapter._usd_notional_volume_field(item, "volume_24h_fp", legacy_field="volume_24h")
 
     @staticmethod
     def normalize(item: dict[str, Any]) -> NormalizedMarket:
@@ -204,6 +214,7 @@ class KalshiAdapter:
             category=classify_market_category(title=title, provider_category=provider_category, raw=item),
             yes_probability=probability,
             volume_usd=KalshiAdapter._usd_notional_volume(item),
+            volume_24h_usd=KalshiAdapter._usd_notional_volume_24h(item),
             closes_at=closes_at,
             source_url=f"https://kalshi.com/markets/{series_ticker.lower()}" if series_ticker else None,
             raw=item,
