@@ -80,6 +80,33 @@ def test_relevant_feed_collapses_same_provider_threshold_ladders(monkeypatch):
     assert seattle[0].canonical_id == "kalshi:sea-85"
 
 
+def test_relevant_feed_collapses_naked_dollar_bitcoin_threshold_family(monkeypatch):
+    markets = [
+        _market(
+            "btc-111",
+            "Will the price of Bitcoin be above $111,000 on August 26?",
+            venue="polymarket",
+            volume=5000,
+            trend=90,
+            probability_change=0.20,
+        ),
+        _market(
+            "btc-109",
+            "Will the price of Bitcoin be above $109,000 on August 26?",
+            venue="polymarket",
+            volume=4500,
+            trend=80,
+            probability_change=0.15,
+        ),
+    ]
+    monkeypatch.setattr(core, "_DISCOVERY", markets)
+
+    result = _relevant()
+
+    assert len(result) == 1
+    assert result[0].canonical_id == "polymarket:btc-111"
+
+
 def test_relevant_feed_preserves_same_family_across_providers(monkeypatch):
     monkeypatch.setattr(
         core,
