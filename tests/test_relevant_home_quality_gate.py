@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import Response
 
 import app.main as core
+from app.middleware.home_client_dedup import MIN_HOMEPAGE_VOLUME_USD
 from app.routes.public_relevance import relevant_markets
 
 
@@ -42,9 +43,22 @@ def _relevant() -> list:
     return relevant_markets(Response(), category=None, venue=None, q=None, limit=100)
 
 
-def test_relevant_feed_rejects_zero_or_unknown_activity_zero_attention_and_immediate_expiry(monkeypatch):
+def test_relevant_feed_rejects_thin_or_unknown_activity_zero_attention_and_immediate_expiry(monkeypatch):
     good = _market("good", "Useful market", volume=2500, trend=60, closes_in_hours=24)
     zero_volume = _market("zero-volume", "Seattle wins by over 8.5 runs?", volume=0, trend=70)
+    one_dollar_large_mover = _market(
+        "one-dollar-large-mover",
+        "Chicago WS wins by over 9.5 runs?",
+        volume=1,
+        trend=70,
+        probability_change=-0.285,
+    )
+    below_boundary = _market(
+        "below-boundary",
+        "Below material activity boundary",
+        volume=MIN_HOMEPAGE_VOLUME_USD - 0.01,
+        trend=80,
+    )
     unknown_volume = _market("unknown-volume", "Unknown activity", volume=None, trend=80)
     zero_trend = _market("zero-trend", "Chicago C wins by over 7.5 runs?", volume=1400, trend=0)
     closing_now = _market(
@@ -54,14 +68,27 @@ def test_relevant_feed_rejects_zero_or_unknown_activity_zero_attention_and_immed
         trend=30,
         closes_in_hours=0.5,
     )
-    monkeypatch.setattr(core, "_DISCOVERY", [zero_volume, unknown_volume, zero_trend, closing_now, good])
+    monkeypatch.setattr(
+        core,
+        "_DISCOVERY",
+        [zero_volume, one_dollar_large_mover, below_boundary, unknown_volume, zero_trend, closing_now, good],
+    )
 
     result = _relevant()
 
     assert [item.canonical_id for item in result] == [good.canonical_id]
-    assert all((item.volume_usd or 0) > 0 for item in result)
+    assert all((item.volume_usd or 0) >= MIN_HOMEPAGE_VOLUME_USD for item in result)
     assert all(item.trend_score > 0 for item in result)
     assert all(item.relevance_score > 0 for item in result)
+
+
+def test_relevant_feed_accepts_material_activity_boundary(monkeypatch):
+    boundary = _market("boundary", "At material activity boundary", volume=MIN_HOMEPAGE_VOLUME_USD, trend=50)
+    monkeypatch.setattr(core, "_DISCOVERY", [boundary])
+
+    result = _relevant()
+
+    assert [item.canonical_id for item in result] == [boundary.canonical_id]
 
 
 def test_relevant_feed_collapses_same_provider_threshold_ladders(monkeypatch):

@@ -22,19 +22,31 @@ class RelevanceSignal:
     reasons: tuple[str, ...]
 
 
+MIN_FULL_CONFIDENCE_VOLUME_USD = 100.0
+
+
 def relevance_score(market: RelevanceMarket, *, now: datetime | None = None) -> RelevanceSignal:
-    """Rank what deserves attention now without forecasting outcomes or returns."""
+    """Rank what deserves attention now without forecasting outcomes or returns.
+
+    Large probability moves in extremely thin markets are deliberately discounted.
+    A one-dollar market must not outrank materially active markets merely because its
+    displayed probability moved sharply.
+    """
     current = now or datetime.now(timezone.utc)
     reasons: list[tuple[float, str]] = []
     score = 0.0
 
+    volume = max(0.0, market.volume_usd or 0.0)
     movement_points = abs(market.probability_change or 0.0) * 100
-    movement_component = min(30.0, movement_points / 20.0 * 30.0)
+    raw_movement_component = min(30.0, movement_points / 20.0 * 30.0)
+    movement_confidence = min(1.0, volume / MIN_FULL_CONFIDENCE_VOLUME_USD)
+    movement_component = raw_movement_component * movement_confidence
     score += movement_component
     if movement_component >= 15:
         reasons.append((movement_component, f"meaningful probability move ({movement_points:.1f} pts)"))
+    elif raw_movement_component >= 15 and movement_confidence < 1.0:
+        reasons.append((raw_movement_component, "probability move discounted because reported activity is thin"))
 
-    volume = max(0.0, market.volume_usd or 0.0)
     activity_component = 0.0
     if volume > 0:
         activity_component = min(20.0, max(3.0, (log10(volume + 1) - 2.0) * 5.0))

@@ -29,9 +29,9 @@ def test_closed_contract_is_never_relevant():
     assert "no longer open" in result.reasons[0]
 
 
-def test_probability_movement_is_monotonic_until_cap():
+def test_probability_movement_is_monotonic_until_cap_for_material_activity():
     scores = [
-        relevance_score(market(probability_change=change), now=NOW).score
+        relevance_score(market(probability_change=change, volume_usd=100), now=NOW).score
         for change in (0.0, .05, .10, .20, .40)
     ]
     assert scores == sorted(scores)
@@ -44,6 +44,20 @@ def test_volume_never_reduces_relevance():
         for volume in (0, 100, 1_000, 10_000, 1_000_000)
     ]
     assert scores == sorted(scores)
+
+
+def test_regression_one_dollar_market_cannot_get_full_credit_for_large_move():
+    thin = relevance_score(
+        market(probability_change=-0.285, volume_usd=1, trend_score=70),
+        now=NOW,
+    )
+    material = relevance_score(
+        market(probability_change=-0.285, volume_usd=100, trend_score=70),
+        now=NOW,
+    )
+
+    assert thin.score < material.score
+    assert any("discounted" in reason for reason in thin.reasons)
 
 
 def test_nearer_valid_deadline_is_more_urgent_than_distant_deadline():

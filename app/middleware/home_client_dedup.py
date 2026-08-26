@@ -9,12 +9,12 @@ from fastapi import FastAPI, Request
 from starlette.responses import Response
 
 MIN_HOMEPAGE_RELEVANCE = 5.0
-MIN_HOMEPAGE_VOLUME_USD = 0.01
+MIN_HOMEPAGE_VOLUME_USD = 100.0
 MIN_FALLBACK_VOLUME_USD = 1000.0
 MIN_TIME_TO_CLOSE = timedelta(hours=1)
 MAX_PER_SUBJECT_PER_VENUE = 2
-CURATION_VERSION = "quality-v4"
-RENDER_CURATION_VERSION = "prerender-v3"
+CURATION_VERSION = "quality-v5"
+RENDER_CURATION_VERSION = "prerender-v4"
 
 _THRESHOLD_PATTERNS = (
     re.compile(r"\b(above|below|over|under|more\s+than|less\s+than|at\s+least|at\s+most)\s+(?:us\$|\$|€|£)?\s*\d[\d,]*(?:\.\d+)?", re.I),
@@ -148,7 +148,7 @@ def _curate_market_payload(items: list[dict[str, object]], *, now: datetime | No
     return _deduplicate(candidates)
 
 
-_SCRIPT = r'''<script data-predibeacon-render-curation="prerender-v3">
+_SCRIPT = r'''<script data-predibeacon-render-curation="prerender-v4">
 (() => {
   const text = (value) => String(value || '').toLowerCase().replace(/\s+/g, ' ').trim();
   const family = (title) => {
@@ -181,7 +181,7 @@ _SCRIPT = r'''<script data-predibeacon-render-curation="prerender-v3">
     }
     return true;
   };
-  const strictQuality = (item, now) => baseQuality(item, now, 0.01) && item.trend_score >= 5;
+  const strictQuality = (item, now) => baseQuality(item, now, 100) && item.trend_score >= 5;
   const fallbackQuality = (item, now) => baseQuality(item, now, 1000);
   const dedup = (items) => {
     const exactSeen = new Set(), familySeen = new Set(), subjectCounts = new Map(), out = [];
