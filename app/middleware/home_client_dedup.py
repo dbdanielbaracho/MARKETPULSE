@@ -8,13 +8,17 @@ from datetime import datetime, timedelta, timezone
 from fastapi import FastAPI, Request
 from starlette.responses import Response
 
+from app.services.intelligence import attention_score
+from app.services.ranking import activity_confidence
+
 MIN_HOMEPAGE_RELEVANCE = 5.0
 MIN_HOMEPAGE_VOLUME_USD = 100.0
 MIN_FALLBACK_VOLUME_USD = 1000.0
 MIN_TIME_TO_CLOSE = timedelta(hours=1)
 MAX_PER_SUBJECT_PER_VENUE = 2
-CURATION_VERSION = "quality-v5"
-RENDER_CURATION_VERSION = "prerender-v4"
+CURATION_VERSION = "quality-v6"
+RENDER_CURATION_VERSION = "prerender-v5"
+INTELLIGENCE_RANKING_VERSION = "server-ranking-v1"
 
 _THRESHOLD_PATTERNS = (
     re.compile(r"\b(above|below|over|under|more\s+than|less\s+than|at\s+least|at\s+most)\s+(?:us\$|\$|€|£)?\s*\d[\d,]*(?:\.\d+)?", re.I),
@@ -39,6 +43,10 @@ _RENDER_REPLACEMENT = (
     "const data=window.PrediBeaconHomepageCurate(rawData);"
     "grid.innerHTML=data.map(card).join('');"
 )
+_TOP_ATTENTION_NEEDLE = "function attention(m){let s=Math.max(0,Math.min(70,(m.trend_score||0)*.7));const move=Math.abs((m.probability_change||0)*100),vol=m.volume_usd||0,h=hoursLeft(m);s+=Math.min(15,move*.75);if(vol>=100000)s+=10;else if(vol>=10000)s+=6;else if(vol>0)s+=2;if(h!=null&&h>0&&h<=72)s+=5;return Math.round(Math.min(100,s))}"
+_TOP_ATTENTION_REPLACEMENT = "function attention(m){return Number.isFinite(m.attention_score)?m.attention_score:0}"
+_TOP_SMART_NEEDLE = "const smart=[...data].sort((a,b)=>(attention(b)+Math.abs(b.probability_change||0)*100)-(attention(a)+Math.abs(a.probability_change||0)*100)).filter(x=>Math.abs(x.probability_change||0)>=.02||attention(x)>=70).slice(0,6);"
+_TOP_SMART_REPLACEMENT = "const smart=[...data].sort((a,b)=>attention(b)-attention(a)).filter(x=>attention(x)>=35).slice(0,6);"
 
 
 def _normalized_text(value: object) -> str:
@@ -109,12 +117,6 @@ def _is_quality_market(item: dict[str, object], *, now: datetime) -> bool:
 
 
 def _is_fallback_quality_market(item: dict[str, object], *, now: datetime) -> bool:
-    """Keep the default discovery useful during quiet snapshots without re-admitting noise.
-
-    trend_score measures recent movement/activity, not contract validity. A refresh can
-    legitimately make every trend score zero. Only when the strict pool is exhausted,
-    allow materially active (>= $1k reported volume), valid, non-imminent contracts.
-    """
     return _base_quality_market(item, now=now, min_volume=MIN_FALLBACK_VOLUME_USD)
 
 
@@ -141,14 +143,30 @@ def _deduplicate(items: list[dict[str, object]]) -> list[dict[str, object]]:
 
 
 def _curate_market_payload(items: list[dict[str, object]], *, now: datetime | None = None) -> list[dict[str, object]]:
-    """Fail closed on noise, but never confuse a quiet snapshot with invalid markets."""
     current = now or datetime.now(timezone.utc)
     strict = [item for item in items if _is_quality_market(item, now=current)]
     candidates = strict or [item for item in items if _is_fallback_quality_market(item, now=current)]
     return _deduplicate(candidates)
 
 
-_SCRIPT = r'''<script data-predibeacon-render-curation="prerender-v4">
+def _enrich_ranking(item: dict[str, object], *, now: datetime) -> dict[str, object]:
+    enriched = dict(item)
+    volume = _number(item.get("volume_usd"))
+    change = _number(item.get("probability_change"))
+    trend = _number(item.get("trend_score")) or 0.0
+    closes_at = _parse_closes_at(item.get("closes_at"))
+    hours_to_close = None if closes_at is None else (closes_at - now).total_seconds() / 3600
+    enriched["activity_confidence"] = round(activity_confidence(volume), 4)
+    enriched["attention_score"] = attention_score(
+        trend_score_value=trend,
+        probability_change_value=change,
+        volume_usd=volume,
+        hours_to_close=hours_to_close,
+    )
+    return enriched
+
+
+_SCRIPT = r'''<script data-predibeacon-render-curation="prerender-v5">
 (() => {
   const text = (value) => String(value || '').toLowerCase().replace(/\s+/g, ' ').trim();
   const family = (title) => {
@@ -238,8 +256,9 @@ def register_home_client_dedup_middleware(app: FastAPI) -> None:
         response = await call_next(request)
         content_type = response.headers.get("content-type", "")
         is_home = request.url.path == "/" and response.status_code == 200 and "text/html" in content_type
+        is_top = request.url.path == "/top" and response.status_code == 200 and "text/html" in content_type
         is_market_api = request.url.path == "/api/v1/markets" and response.status_code == 200 and "application/json" in content_type
-        if not is_home and not is_market_api:
+        if not is_home and not is_top and not is_market_api:
             return response
         chunks = [chunk async for chunk in response.body_iterator]
         raw = b"".join(chunk if isinstance(chunk, bytes) else chunk.encode("utf-8") for chunk in chunks)
@@ -248,14 +267,16 @@ def register_home_client_dedup_middleware(app: FastAPI) -> None:
             try:
                 payload = json.loads(raw)
                 if isinstance(payload, list) and all(isinstance(item, dict) for item in payload):
+                    current = datetime.now(timezone.utc)
                     input_count = len(payload)
-                    strict_count = sum(_is_quality_market(item, now=datetime.now(timezone.utc)) for item in payload)
-                    curated = _curate_market_payload(payload)
+                    strict_count = sum(_is_quality_market(item, now=current) for item in payload)
+                    curated = [_enrich_ranking(item, now=current) for item in _curate_market_payload(payload, now=current)]
                     raw = json.dumps(curated, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
                     headers["X-PrediBeacon-Curation"] = CURATION_VERSION
                     headers["X-PrediBeacon-Curation-Input"] = str(input_count)
                     headers["X-PrediBeacon-Curation-Output"] = str(len(curated))
                     headers["X-PrediBeacon-Curation-Mode"] = "strict" if strict_count else "quiet-market-fallback"
+                    headers["X-PrediBeacon-Ranking"] = INTELLIGENCE_RANKING_VERSION
             except (UnicodeDecodeError, json.JSONDecodeError):
                 pass
             return Response(content=raw, status_code=response.status_code, headers=headers, media_type=response.media_type)
@@ -263,6 +284,15 @@ def register_home_client_dedup_middleware(app: FastAPI) -> None:
             body = raw.decode("utf-8")
         except UnicodeDecodeError:
             return Response(content=raw, status_code=response.status_code, headers=headers, media_type=response.media_type)
+        if is_top:
+            attention_rewritten = _TOP_ATTENTION_NEEDLE in body
+            smart_rewritten = _TOP_SMART_NEEDLE in body
+            if attention_rewritten:
+                body = body.replace(_TOP_ATTENTION_NEEDLE, _TOP_ATTENTION_REPLACEMENT, 1)
+            if smart_rewritten:
+                body = body.replace(_TOP_SMART_NEEDLE, _TOP_SMART_REPLACEMENT, 1)
+            headers["X-PrediBeacon-Intelligence-Ranking"] = INTELLIGENCE_RANKING_VERSION if attention_rewritten and smart_rewritten else "missing"
+            return Response(content=body, status_code=response.status_code, headers=headers, media_type=response.media_type)
         rewritten = _RENDER_NEEDLE in body
         if rewritten:
             body = body.replace(_RENDER_NEEDLE, _RENDER_REPLACEMENT, 1)
