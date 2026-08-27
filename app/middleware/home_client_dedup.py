@@ -257,29 +257,11 @@ def register_home_client_dedup_middleware(app: FastAPI) -> None:
         content_type = response.headers.get("content-type", "")
         is_home = request.url.path == "/" and response.status_code == 200 and "text/html" in content_type
         is_top = request.url.path == "/top" and response.status_code == 200 and "text/html" in content_type
-        is_market_api = request.url.path == "/api/v1/markets" and response.status_code == 200 and "application/json" in content_type
-        if not is_home and not is_top and not is_market_api:
+        if not is_home and not is_top:
             return response
         chunks = [chunk async for chunk in response.body_iterator]
         raw = b"".join(chunk if isinstance(chunk, bytes) else chunk.encode("utf-8") for chunk in chunks)
         headers = {k: v for k, v in response.headers.items() if k.lower() != "content-length"}
-        if is_market_api:
-            try:
-                payload = json.loads(raw)
-                if isinstance(payload, list) and all(isinstance(item, dict) for item in payload):
-                    current = datetime.now(timezone.utc)
-                    input_count = len(payload)
-                    strict_count = sum(_is_quality_market(item, now=current) for item in payload)
-                    curated = [_enrich_ranking(item, now=current) for item in _curate_market_payload(payload, now=current)]
-                    raw = json.dumps(curated, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
-                    headers["X-PrediBeacon-Curation"] = CURATION_VERSION
-                    headers["X-PrediBeacon-Curation-Input"] = str(input_count)
-                    headers["X-PrediBeacon-Curation-Output"] = str(len(curated))
-                    headers["X-PrediBeacon-Curation-Mode"] = "strict" if strict_count else "quiet-market-fallback"
-                    headers["X-PrediBeacon-Ranking"] = INTELLIGENCE_RANKING_VERSION
-            except (UnicodeDecodeError, json.JSONDecodeError):
-                pass
-            return Response(content=raw, status_code=response.status_code, headers=headers, media_type=response.media_type)
         try:
             body = raw.decode("utf-8")
         except UnicodeDecodeError:
