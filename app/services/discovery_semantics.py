@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import Mapping
 
+from app.middleware.home_event_grouping import _close_day, _family_title, _normalized_title
 from app.services.ranking import activity_confidence
 from app.services.relevance import RelevanceSignal, relevance_score
 
@@ -125,10 +126,25 @@ def curate_semantic_discovery(items: list[dict[str, object]], *, now: datetime |
     """
     current = now or datetime.now(timezone.utc)
     curated: list[dict[str, object]] = []
+    exact_seen: set[tuple[str, str]] = set()
+    family_seen: set[tuple[str, str, str]] = set()
     for source in items:
         decision = evaluate_discovery_market(source, now=current)
         if not decision.eligible:
             continue
+        venue = str(source.get("venue") or "").casefold()
+        title = str(source.get("title") or "")
+        closes_at = source.get("closes_at")
+        exact_key = (venue, _normalized_title(title))
+        family_key = (
+            venue,
+            _family_title(title),
+            _close_day(str(closes_at) if closes_at is not None else None),
+        )
+        if exact_key in exact_seen or family_key in family_seen:
+            continue
+        exact_seen.add(exact_key)
+        family_seen.add(family_key)
         item = dict(source)
         item["relevance_score"] = decision.relevance
         item["relevance_reasons"] = list(decision.reasons)
