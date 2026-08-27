@@ -163,6 +163,27 @@ def test_monitored_market_api_keeps_kalshi_without_reported_volume():
     assert "x-predibeacon-curation" not in response.headers
 
 
+def test_health_exposes_deployment_identity(monkeypatch):
+    sha = "a" * 40
+    monkeypatch.setenv("RAILWAY_GIT_COMMIT_SHA", sha)
+    monkeypatch.setenv("RAILWAY_DEPLOYMENT_ID", "deployment-123")
+
+    payload = main.health()
+
+    assert payload["deployment_sha"] == sha
+    assert payload["deployment_id"] == "deployment-123"
+
+
+def test_health_marks_missing_deployment_identity_unknown(monkeypatch):
+    monkeypatch.delenv("RAILWAY_GIT_COMMIT_SHA", raising=False)
+    monkeypatch.delenv("RAILWAY_DEPLOYMENT_ID", raising=False)
+
+    payload = main.health()
+
+    assert payload["deployment_sha"] == "unknown"
+    assert payload["deployment_id"] == "unknown"
+
+
 def test_refresh_interval_is_bounded(monkeypatch):
     monkeypatch.setenv("MP_REFRESH_INTERVAL_SECONDS", "5")
     with pytest.raises(ValueError):
