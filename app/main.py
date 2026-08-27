@@ -709,10 +709,23 @@ async def public_security_headers(request: Request, call_next):
     return response
 
 
+def _deployment_identity() -> dict[str, str]:
+    """Expose non-secret build identity supplied by the deployment platform."""
+    return {
+        "deployment_sha": os.getenv("RAILWAY_GIT_COMMIT_SHA", "").strip() or "unknown",
+        "deployment_id": os.getenv("RAILWAY_DEPLOYMENT_ID", "").strip() or "unknown",
+    }
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     """Deterministic readiness endpoint: never depends on external venues."""
-    return {"status": "ok", "service": "predibeacon-web", "version": APP_VERSION}
+    return {
+        "status": "ok",
+        "service": "predibeacon-web",
+        "version": APP_VERSION,
+        **_deployment_identity(),
+    }
 
 
 @app.get("/api/v1/status")
@@ -726,6 +739,7 @@ def status() -> dict[str, object]:
         "service": "predibeacon-web",
         "version": APP_VERSION,
         "country": "US",
+        **_deployment_identity(),
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "last_refresh_at": _LAST_REFRESH_AT.isoformat() if _LAST_REFRESH_AT else None,
         "last_refresh_errors": ",".join(_LAST_REFRESH_ERRORS) or None,
