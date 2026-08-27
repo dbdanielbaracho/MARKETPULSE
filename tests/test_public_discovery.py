@@ -93,3 +93,24 @@ def test_semantic_fields_are_machine_verifiable_for_every_curated_item():
         assert 0 <= item["activity_confidence"] <= 1
         assert item["attention_reason_code"]
         assert 0 <= item["attention_score"] <= 100
+
+
+def test_discovery_keeps_only_highest_ranked_contract_per_threshold_family():
+    set_discovery_markets([
+        _market(
+            "polymarket:btc-100k",
+            "Will the price of Bitcoin be above $100,000 on August 27?",
+            volume=50_000,
+            trend=70,
+        ).model_copy(update={"venue": "polymarket"}),
+        _market(
+            "polymarket:btc-105k",
+            "Will the price of Bitcoin be above $105,000 on August 27?",
+            volume=40_000,
+            trend=60,
+        ).model_copy(update={"venue": "polymarket"}),
+    ])
+
+    payload = _client().get("/api/v1/discovery?sort=trending&limit=100").json()
+
+    assert [item["canonical_id"] for item in payload] == ["polymarket:btc-100k"]
