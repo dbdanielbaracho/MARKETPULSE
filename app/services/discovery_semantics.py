@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from types import SimpleNamespace
@@ -23,6 +24,14 @@ MIN_BEST_AVAILABLE_RELEVANCE_SCORE = 12
 BEST_AVAILABLE_LIMIT = 6
 
 SEMANTIC_DISCOVERY_VERSION = "semantic-discovery-v1"
+
+_THRESHOLD_PATTERNS = (
+    re.compile(r"\b(above|below|over|under|more\s+than|less\s+than|at\s+least|at\s+most)\s+(?:us\$|\$|€|£)?\s*\d[\d,]*(?:\.\d+)?", re.I),
+    re.compile(r"(?:us\$|\$|€|£)?\s*\d[\d,]*(?:\.\d+)?\s*(?=(?:usd|eur|gbp|jpy|cad|aud|btc|eth)(?:\b|/))", re.I),
+    re.compile(r"\b\d+(?:\.\d+)?\+\s*(?=(?:hits?|runs?|rbis?|rbi|goals?|assists?|rebounds?|points?|stolen\s+bases?|bases?|strikeouts?|saves?|shots?|tackles?|receptions?|yards?)\b)", re.I),
+    re.compile(r"\b(?:over|under|more\s+than|less\s+than|at\s+least|at\s+most)\s+\d+(?:\.\d+)?\s*(?=(?:runs?|goals?|points?|yards?|sets?|games?|rounds?)\b)", re.I),
+    re.compile(r"\b\d[\d,]*(?:\.\d+)?\s*(?=(?:%|°[cf]|degrees?\b|ounces?\b|oz\b|barrels?\b|bbl\b))", re.I),
+)
 
 
 @dataclass(frozen=True)
@@ -56,6 +65,32 @@ def _datetime(value: object) -> datetime | None:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     return parsed.astimezone(timezone.utc)
+
+
+def _normalized_text(value: object) -> str:
+    return " ".join(str(value or "").casefold().split())
+
+
+def discovery_family_key(title: object) -> str:
+    """Normalize threshold variants into the same editorial market family."""
+    value = _normalized_text(title)
+    value = _THRESHOLD_PATTERNS[0].sub(r"\1 <threshold>", value)
+    for pattern in _THRESHOLD_PATTERNS[1:]:
+        value = pattern.sub("<threshold> ", value)
+    return " ".join(value.split())
+
+
+def _deduplicate_families(items: list[dict[str, object]]) -> list[dict[str, object]]:
+    """Keep the highest-ranked item already present first for each venue/family."""
+    curated: list[dict[str, object]] = []
+    seen: set[tuple[str, str]] = set()
+    for item in items:
+        key = (_normalized_text(item.get("venue")), discovery_family_key(item.get("title")))
+        if key in seen:
+            continue
+        seen.add(key)
+        curated.append(item)
+    return curated
 
 
 def _reason_code(item: Mapping[str, object], signal: RelevanceSignal, *, now: datetime) -> str:
@@ -143,7 +178,7 @@ def curate_semantic_discovery(items: list[dict[str, object]], *, now: datetime |
         if not decision.eligible:
             continue
         curated.append(_decorate(source, decision, tier="attention"))
-    return curated
+    return _deduplicate_families(curated)
 
 
 def curate_best_available(
@@ -152,13 +187,7 @@ def curate_best_available(
     now: datetime | None = None,
     limit: int = BEST_AVAILABLE_LIMIT,
 ) -> list[dict[str, object]]:
-    """Return a bounded, still-quality-screened set when strict Kalshi Discovery is empty.
-
-    This is not a low-quality fallback: structurally invalid markets and the known
-    thin-activity escape class stay excluded. The caller must expose the response
-    mode so production tests can distinguish strict attention cards from
-    best-available venue cards.
-    """
+    """Return a bounded, still-quality-screened set when strict Kalshi Discovery is empty."""
     current = now or datetime.now(timezone.utc)
     available: list[dict[str, object]] = []
     for source in items:
@@ -171,6 +200,4 @@ def curate_best_available(
         if decision.relevance < MIN_BEST_AVAILABLE_RELEVANCE_SCORE:
             continue
         available.append(_decorate(source, decision, tier="best_available"))
-        if len(available) >= max(1, limit):
-            break
-    return available
+    return _deduplicate_families(available)[: max(1, limit)]
