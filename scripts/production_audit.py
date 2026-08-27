@@ -38,20 +38,29 @@ class Audit:
         self.require(response.status_code == 200, f"GET {path} returned {response.status_code}")
         return response
 
-    async def wait_for_version(
-        self, client: httpx.AsyncClient, expected_version: str | None, timeout_seconds: int
+    async def wait_for_deployment(
+        self,
+        client: httpx.AsyncClient,
+        expected_version: str | None,
+        expected_sha: str | None,
+        timeout_seconds: int,
     ) -> dict:
         deadline = time.monotonic() + timeout_seconds
         while True:
             response = await self.get(client, "/health")
             if response is not None and response.status_code == 200:
                 payload = response.json()
-                if not expected_version or payload.get("version") == expected_version:
+                version_matches = not expected_version or payload.get("version") == expected_version
+                sha_matches = not expected_sha or payload.get("deployment_sha") == expected_sha
+                if version_matches and sha_matches:
                     return payload
             if time.monotonic() >= deadline:
-                actual = response.json().get("version") if response is not None else None
+                actual = response.json() if response is not None else {}
                 self.failures.append(
-                    f"deployment version did not become {expected_version!r}; actual={actual!r}"
+                    "deployment identity did not become "
+                    f"version={expected_version!r}, sha={expected_sha!r}; "
+                    f"actual_version={actual.get('version')!r}, "
+                    f"actual_sha={actual.get('deployment_sha')!r}"
                 )
                 return {}
             await asyncio.sleep(10)
@@ -160,12 +169,24 @@ class Audit:
         elif market.get("venue") == "kalshi":
             await self.audit_kalshi_destination(client, market)
 
-    async def run(self, expected_version: str | None, deploy_timeout: int) -> int:
+    async def run(
+        self,
+        expected_version: str | None,
+        expected_sha: str | None,
+        deploy_timeout: int,
+    ) -> int:
         timeout = httpx.Timeout(20.0)
         limits = httpx.Limits(max_connections=12, max_keepalive_connections=6)
         async with httpx.AsyncClient(timeout=timeout, limits=limits, follow_redirects=False) as client:
-            health = await self.wait_for_version(client, expected_version, deploy_timeout)
+            health = await self.wait_for_deployment(
+                client, expected_version, expected_sha, deploy_timeout
+            )
             self.require(health.get("status") == "ok", "health status is not ok")
+            if expected_sha:
+                self.require(
+                    health.get("deployment_sha") == expected_sha,
+                    "production deployment SHA does not match the audited commit",
+                )
 
             status = await self.get(client, "/api/v1/status")
             if status is not None and status.status_code == 200:
@@ -216,13 +237,16 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Audit PrediBeacon production end to end")
     parser.add_argument("--base-url", default="https://predibeacon.com")
     parser.add_argument("--expected-version")
+    parser.add_argument("--expected-sha")
     parser.add_argument("--market-limit", type=int, default=25)
     parser.add_argument("--deploy-timeout", type=int, default=0)
     args = parser.parse_args()
     if not 1 <= args.market_limit <= 100:
         parser.error("--market-limit must be between 1 and 100")
     audit = Audit(args.base_url, args.market_limit)
-    return asyncio.run(audit.run(args.expected_version, args.deploy_timeout))
+    return asyncio.run(
+        audit.run(args.expected_version, args.expected_sha, args.deploy_timeout)
+    )
 
 
 if __name__ == "__main__":
