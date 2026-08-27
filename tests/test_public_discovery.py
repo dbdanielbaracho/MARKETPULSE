@@ -6,6 +6,8 @@ from fastapi.testclient import TestClient
 from app.main import DiscoveryMarket, set_discovery_markets
 from app.routes.public_discovery import router
 from app.services.discovery_semantics import (
+    MIN_BEST_AVAILABLE_RELEVANCE_SCORE,
+    MIN_BEST_AVAILABLE_VOLUME_USD,
     MIN_DISCOVERY_RELEVANCE_SCORE,
     MIN_DISCOVERY_VOLUME_USD,
     SEMANTIC_DISCOVERY_VERSION,
@@ -46,25 +48,48 @@ def test_owner_observed_kalshi_escape_is_removed_from_curated_discovery():
     response = _client().get("/api/v1/discovery?venue=kalshi&sort=trending&limit=100")
     assert response.status_code == 200
     assert response.headers["x-predibeacon-semantic-discovery"] == SEMANTIC_DISCOVERY_VERSION
+    assert response.headers["x-predibeacon-discovery-mode"] == "attention"
     assert response.headers["x-predibeacon-monitored-candidate-count"] == "4"
     assert response.headers["x-predibeacon-curated-count"] == "1"
     payload = response.json()
     assert [item["title"] for item in payload] == ["Full Game: over 183.5 points?"]
     assert payload[0]["volume_usd"] >= MIN_DISCOVERY_VOLUME_USD
     assert payload[0]["relevance_score"] >= MIN_DISCOVERY_RELEVANCE_SCORE
+    assert payload[0]["discovery_tier"] == "attention"
     assert isinstance(payload[0]["attention_score"], (int, float))
 
 
-def test_discovery_can_truthfully_be_empty_while_monitored_candidates_exist():
+def test_known_thin_kalshi_cards_stay_blocked_even_when_strict_discovery_is_empty():
     set_discovery_markets([
         _market("kalshi:thin-a", "Thin A", volume=149, trend=100, change=.50),
         _market("kalshi:thin-b", "Thin B", volume=302, trend=90, change=.40),
+        _market("kalshi:thin-c", "Thin C", volume=289, trend=95, change=.45),
     ])
     response = _client().get("/api/v1/discovery?venue=kalshi")
     assert response.status_code == 200
     assert response.json() == []
-    assert response.headers["x-predibeacon-monitored-candidate-count"] == "2"
+    assert response.headers["x-predibeacon-discovery-mode"] == "attention"
+    assert response.headers["x-predibeacon-monitored-candidate-count"] == "3"
     assert response.headers["x-predibeacon-curated-count"] == "0"
+
+
+def test_kalshi_returns_screened_best_available_cards_instead_of_zero_when_possible():
+    set_discovery_markets([
+        _market("kalshi:useful-a", "Useful Kalshi A", volume=850, trend=35, change=.06),
+        _market("kalshi:useful-b", "Useful Kalshi B", volume=650, trend=30, change=.04),
+        _market("kalshi:weak", "Known weak class", volume=302, trend=100, change=.50),
+    ])
+    response = _client().get("/api/v1/discovery?venue=kalshi&sort=trending&limit=6")
+    assert response.status_code == 200
+    payload = response.json()
+    assert response.headers["x-predibeacon-discovery-mode"] == "best-available"
+    assert response.headers["x-predibeacon-monitored-candidate-count"] == "3"
+    assert response.headers["x-predibeacon-curated-count"] == "2"
+    assert [item["title"] for item in payload] == ["Useful Kalshi A", "Useful Kalshi B"]
+    assert all(item["discovery_tier"] == "best_available" for item in payload)
+    assert all(item["volume_usd"] >= MIN_BEST_AVAILABLE_VOLUME_USD for item in payload)
+    assert all(item["relevance_score"] >= MIN_BEST_AVAILABLE_RELEVANCE_SCORE for item in payload)
+    assert "Known weak class" not in {item["title"] for item in payload}
 
 
 def test_sorting_is_applied_before_semantic_subset_without_reintroducing_weak_markets():
@@ -90,6 +115,7 @@ def test_semantic_fields_are_machine_verifiable_for_every_curated_item():
     for item in payload:
         assert item["semantic_discovery_version"] == SEMANTIC_DISCOVERY_VERSION
         assert item["relevance_score"] >= MIN_DISCOVERY_RELEVANCE_SCORE
+        assert item["discovery_tier"] == "attention"
         assert 0 <= item["activity_confidence"] <= 1
         assert item["attention_reason_code"]
         assert 0 <= item["attention_score"] <= 100
