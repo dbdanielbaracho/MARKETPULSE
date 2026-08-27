@@ -267,7 +267,7 @@ def set_discovery_markets(markets: list[DiscoveryMarket]) -> None:
 
 
 def publish_refresh_batch(batch: RefreshBatch) -> None:
-    """Publish a complete successful/partial batch without erasing good data on total failure."""
+    """Replace refreshed venue slices while preserving last-good data for absent venues."""
     global _LAST_REFRESH_AT, _LAST_REFRESH_ERRORS
     _LAST_REFRESH_AT = datetime.now(timezone.utc)
     _LAST_REFRESH_ERRORS = batch.errors
@@ -292,7 +292,9 @@ def publish_refresh_batch(batch: RefreshBatch) -> None:
                 source_url=str(market.source_url) if market.source_url else None,
             )
         )
-    set_discovery_markets(items)
+    refreshed_venues = {item.venue for item in items}
+    preserved = [item for item in _DISCOVERY if item.venue not in refreshed_venues]
+    set_discovery_markets([*preserved, *items])
 
 
 def _bounded_seconds(name: str, default: float, minimum: float, maximum: float) -> float:
