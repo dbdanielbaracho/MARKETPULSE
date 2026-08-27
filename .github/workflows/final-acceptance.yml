@@ -74,8 +74,12 @@ jobs:
       - name: Allow merged deployment to settle
         run: sleep 90
 
-      - name: Production API/domain audit
-        run: python -m scripts.production_audit --deploy-timeout 600 --market-limit 50
+      - name: Production API/domain audit on this exact commit
+        run: >-
+          python -m scripts.production_audit
+          --deploy-timeout 600
+          --market-limit 50
+          --expected-sha "$GITHUB_SHA"
 
       - name: Production public journey, homepage quality and responsive acceptance
         run: |
