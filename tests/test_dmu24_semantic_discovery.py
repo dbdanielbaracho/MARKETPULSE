@@ -3,9 +3,11 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from app.services.discovery_semantics import (
+    MIN_DISCOVERY_CLOSE_BUFFER_MINUTES,
     MIN_DISCOVERY_RELEVANCE_SCORE,
     MIN_DISCOVERY_VOLUME_USD,
     SEMANTIC_DISCOVERY_VERSION,
+    curate_best_available,
     curate_semantic_discovery,
     evaluate_discovery_market,
 )
@@ -125,3 +127,45 @@ def test_semantic_decision_is_monotonic_for_activity_when_other_inputs_are_equal
     confidences = [item.activity_confidence for item in decisions]
     assert confidences == sorted(confidences)
     assert all(item.eligible for item in decisions)
+
+
+def test_discovery_rejects_market_inside_close_buffer_and_accepts_market_beyond_it():
+    inside = market(
+        "Closing inside buffer",
+        closes_at=(NOW + timedelta(minutes=MIN_DISCOVERY_CLOSE_BUFFER_MINUTES - 1)).isoformat(),
+    )
+    boundary = market(
+        "Closing exactly at buffer",
+        closes_at=(NOW + timedelta(minutes=MIN_DISCOVERY_CLOSE_BUFFER_MINUTES)).isoformat(),
+    )
+    beyond = market(
+        "Closing beyond buffer",
+        closes_at=(NOW + timedelta(minutes=MIN_DISCOVERY_CLOSE_BUFFER_MINUTES + 5)).isoformat(),
+    )
+
+    assert evaluate_discovery_market(inside, now=NOW).eligible is False
+    assert evaluate_discovery_market(boundary, now=NOW).eligible is False
+    assert evaluate_discovery_market(beyond, now=NOW).eligible is True
+    assert [item["title"] for item in curate_semantic_discovery([inside, boundary, beyond], now=NOW)] == [
+        "Closing beyond buffer"
+    ]
+
+
+def test_best_available_cannot_bypass_close_buffer():
+    inside = market(
+        "Kalshi fallback closing too soon",
+        volume_usd=750.0,
+        trend_score=90.0,
+        probability_change=0.20,
+        closes_at=(NOW + timedelta(minutes=MIN_DISCOVERY_CLOSE_BUFFER_MINUTES - 5)).isoformat(),
+    )
+    beyond = market(
+        "Kalshi fallback safely open",
+        volume_usd=750.0,
+        trend_score=90.0,
+        probability_change=0.20,
+        closes_at=(NOW + timedelta(hours=2)).isoformat(),
+    )
+
+    result = curate_best_available([inside, beyond], now=NOW)
+    assert [item["title"] for item in result] == ["Kalshi fallback safely open"]
