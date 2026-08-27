@@ -1,11 +1,14 @@
 from datetime import datetime, timezone
 
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 import app.main as main
 from app.domain.markets import NormalizedMarket
 from app.services.ingestion import RefreshBatch
 from app.services.intelligence import MarketSignal
+from app.middleware.home_client_dedup import register_home_client_dedup_middleware
 
 
 def test_publish_refresh_batch_feeds_discovery_api_model(monkeypatch):
@@ -132,6 +135,32 @@ def test_silent_empty_venue_result_preserves_last_good_slice(monkeypatch):
         "kalshi:K1",
         "polymarket:P-NEW",
     }
+
+
+def test_monitored_market_api_keeps_kalshi_without_reported_volume():
+    api = FastAPI()
+
+    @api.get("/api/v1/markets")
+    def monitored_markets():
+        return [{
+            "canonical_id": "kalshi:K-NO-VOLUME",
+            "title": "Kalshi market without reported volume",
+            "venue": "kalshi",
+            "probability": 0.55,
+            "volume_usd": None,
+            "trend_score": 20,
+            "observed_at": "2026-08-22T00:00:00Z",
+        }]
+
+    register_home_client_dedup_middleware(api)
+    response = TestClient(api).get("/api/v1/markets?venue=kalshi")
+
+    assert response.status_code == 200
+    assert [item["canonical_id"] for item in response.json()] == [
+        "kalshi:K-NO-VOLUME"
+    ]
+    assert response.json()[0]["volume_usd"] is None
+    assert "x-predibeacon-curation" not in response.headers
 
 
 def test_refresh_interval_is_bounded(monkeypatch):
