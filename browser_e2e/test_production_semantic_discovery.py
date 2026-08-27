@@ -5,6 +5,8 @@ import os
 import pytest
 
 from app.services.discovery_semantics import (
+    MIN_BEST_AVAILABLE_RELEVANCE_SCORE,
+    MIN_BEST_AVAILABLE_VOLUME_USD,
     MIN_DISCOVERY_RELEVANCE_SCORE,
     MIN_DISCOVERY_VOLUME_USD,
     SEMANTIC_DISCOVERY_VERSION,
@@ -29,12 +31,20 @@ def _assert_semantic_payload(label: str, response) -> list[dict]:
     assert response.ok, (label, response.status)
     headers = {key.casefold(): value for key, value in response.headers.items()}
     assert headers.get("x-predibeacon-semantic-discovery") == SEMANTIC_DISCOVERY_VERSION, (label, headers)
+    mode = headers.get("x-predibeacon-discovery-mode", "attention")
+    assert mode in {"attention", "best-available"}, (label, headers)
     items = response.json()
     assert isinstance(items, list), (label, type(items))
     for item in items:
         assert item.get("semantic_discovery_version") == SEMANTIC_DISCOVERY_VERSION, (label, item)
-        assert (item.get("volume_usd") or 0) >= MIN_DISCOVERY_VOLUME_USD, (label, item)
-        assert (item.get("relevance_score") or 0) >= MIN_DISCOVERY_RELEVANCE_SCORE, (label, item)
+        if mode == "best-available":
+            assert item.get("discovery_tier") == "best_available", (label, item)
+            assert (item.get("volume_usd") or 0) >= MIN_BEST_AVAILABLE_VOLUME_USD, (label, item)
+            assert (item.get("relevance_score") or 0) >= MIN_BEST_AVAILABLE_RELEVANCE_SCORE, (label, item)
+        else:
+            assert item.get("discovery_tier") == "attention", (label, item)
+            assert (item.get("volume_usd") or 0) >= MIN_DISCOVERY_VOLUME_USD, (label, item)
+            assert (item.get("relevance_score") or 0) >= MIN_DISCOVERY_RELEVANCE_SCORE, (label, item)
         assert isinstance(item.get("attention_score"), (int, float)), (label, item)
         assert item.get("attention_reason_code") in {
             "sharp_move_with_activity",
@@ -47,7 +57,7 @@ def _assert_semantic_payload(label: str, response) -> list[dict]:
     return items
 
 
-def test_real_production_discovery_only_highlights_semantically_eligible_markets():
+def test_real_production_discovery_keeps_quality_gate_and_kalshi_availability_contract():
     with sync_playwright() as p:
         request = p.request.new_context()
         try:
@@ -58,7 +68,12 @@ def test_real_production_discovery_only_highlights_semantically_eligible_markets
                             base + f"/api/v1/discovery?venue={venue}&sort={sort}&limit=100",
                             timeout=30_000,
                         )
-                        _assert_semantic_payload(f"{label}:{venue}:{sort}", response)
+                        payload = _assert_semantic_payload(f"{label}:{venue}:{sort}", response)
+                        headers = {key.casefold(): value for key, value in response.headers.items()}
+                        if venue == "polymarket":
+                            assert headers.get("x-predibeacon-discovery-mode") != "best-available", headers
+                        if venue == "kalshi" and payload:
+                            assert all((item.get("volume_usd") or 0) > 302 for item in payload), payload
                 top = request.get(base + "/top", timeout=30_000)
                 assert top.ok, (label, top.status)
                 top_headers = {key.casefold(): value for key, value in top.headers.items()}
@@ -71,7 +86,7 @@ def test_real_production_discovery_only_highlights_semantically_eligible_markets
             request.dispose()
 
 
-def test_real_portuguese_kalshi_journey_has_semantic_empty_state_or_localized_reasons_and_score():
+def test_real_portuguese_kalshi_journey_has_cards_when_quality_screen_allows_them():
     with sync_playwright() as p:
         browser = p.chromium.launch()
         page = browser.new_page(viewport={"width": 1440, "height": 1000})
@@ -84,21 +99,19 @@ def test_real_portuguese_kalshi_journey_has_semantic_empty_state_or_localized_re
             page.wait_for_timeout(750)
             cards = page.locator("#grid .card")
             count = cards.count()
-            if count == 0:
-                state = page.locator("#state").inner_text().casefold()
-                assert "critérios documentados de atenção" in state, state
-            else:
+            api = page.request.get(
+                CUSTOM + "/api/v1/discovery?venue=kalshi&sort=trending&limit=100",
+                timeout=30_000,
+            )
+            payload = _assert_semantic_payload("custom:kalshi:dom", api)
+            assert count == len(payload), (count, len(payload))
+            if payload:
                 forbidden_english = (
                     "This contract closes within 72 hours",
                     "A large recent probability move pushed this market up the ranking",
                     "High reported activity makes this market worth monitoring",
                     "Ranked using movement, activity, freshness and availability",
                 )
-                api = page.request.get(
-                    CUSTOM + "/api/v1/discovery?venue=kalshi&sort=trending&limit=100",
-                    timeout=30_000,
-                )
-                payload = _assert_semantic_payload("custom:kalshi:dom", api)
                 by_title = {item["title"]: item for item in payload}
                 for index in range(count):
                     card = cards.nth(index)

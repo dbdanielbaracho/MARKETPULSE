@@ -7,7 +7,11 @@ from fastapi import APIRouter, Query
 from fastapi.responses import JSONResponse
 
 from app.main import markets
-from app.services.discovery_semantics import SEMANTIC_DISCOVERY_VERSION, curate_semantic_discovery
+from app.services.discovery_semantics import (
+    SEMANTIC_DISCOVERY_VERSION,
+    curate_best_available,
+    curate_semantic_discovery,
+)
 from app.services.intelligence import attention_score
 
 
@@ -40,16 +44,24 @@ def semantic_discovery(
     q: str | None = Query(default=None, max_length=120),
     limit: int = Query(default=50, ge=1, le=100),
 ) -> JSONResponse:
-    """Curated subset for the user-facing 'deserves attention now' journey.
+    """Return Discovery cards without turning an active Kalshi venue into a dead page.
 
-    `/api/v1/markets` remains the monitored/ranked inventory contract. This route
-    is deliberately stricter and may truthfully return zero items.
+    Strict semantic-attention cards remain the first choice. If a user explicitly
+    selects Kalshi and none pass the strict gate, a bounded quality-screened
+    best-available set is returned. Known thin/weak Kalshi cards remain excluded.
+    `/api/v1/markets` continues to expose the complete monitored inventory.
     """
-    # Pull a full bounded ranked candidate set before applying the semantic gate,
-    # otherwise a small requested limit could hide qualifying items behind weak ones.
     raw = markets(sort=sort, category=category, venue=venue, q=q, limit=100)
     candidates = [item.model_dump(mode="json") for item in raw]
-    curated = curate_semantic_discovery(candidates)[:limit]
+
+    curated = curate_semantic_discovery(candidates)
+    response_mode = "attention"
+    if not curated and venue == "kalshi" and candidates:
+        curated = curate_best_available(candidates, limit=limit)
+        if curated:
+            response_mode = "best-available"
+    curated = curated[:limit]
+
     now = datetime.now(timezone.utc)
     for item in curated:
         item["attention_score"] = attention_score(
@@ -62,6 +74,7 @@ def semantic_discovery(
         curated,
         headers={
             "X-PrediBeacon-Semantic-Discovery": SEMANTIC_DISCOVERY_VERSION,
+            "X-PrediBeacon-Discovery-Mode": response_mode,
             "X-PrediBeacon-Monitored-Candidate-Count": str(len(candidates)),
             "X-PrediBeacon-Curated-Count": str(len(curated)),
         },

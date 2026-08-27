@@ -10,11 +10,18 @@ from app.services.relevance import RelevanceSignal, relevance_score
 
 # Semantic Product Truth Gate (DMU-SEM-001): being a valid/monitored contract is
 # not enough to be highlighted as a market that "deserves attention now".
-# The existing quiet-market fallback already treated USD 1,000 as materially
-# active. Reuse that evidence-backed boundary instead of inventing a second,
-# weaker editorial definition.
 MIN_DISCOVERY_VOLUME_USD = 1_000.0
 MIN_DISCOVERY_RELEVANCE_SCORE = 20
+
+# Venue-specific availability guard. When a user explicitly opens Kalshi and the
+# strict attention gate returns nothing, PrediBeacon may show a small
+# "best available" set instead of a dead 0-card page. These floors are still
+# deliberately above the owner-observed weak Kalshi escapes ($149/$289/$302), so
+# the availability fix cannot reintroduce that regression class.
+MIN_BEST_AVAILABLE_VOLUME_USD = 500.0
+MIN_BEST_AVAILABLE_RELEVANCE_SCORE = 12
+BEST_AVAILABLE_LIMIT = 6
+
 SEMANTIC_DISCOVERY_VERSION = "semantic-discovery-v1"
 
 
@@ -116,24 +123,54 @@ def evaluate_discovery_market(item: Mapping[str, object], *, now: datetime | Non
     )
 
 
-def curate_semantic_discovery(items: list[dict[str, object]], *, now: datetime | None = None) -> list[dict[str, object]]:
-    """Return only markets that satisfy the user-facing Discovery promise.
+def _decorate(source: Mapping[str, object], decision: SemanticDiscoveryDecision, *, tier: str) -> dict[str, object]:
+    item = dict(source)
+    item["relevance_score"] = decision.relevance
+    item["relevance_reasons"] = list(decision.reasons)
+    item["activity_confidence"] = decision.activity_confidence
+    item["attention_reason_code"] = decision.reason_code
+    item["semantic_discovery_version"] = SEMANTIC_DISCOVERY_VERSION
+    item["discovery_tier"] = tier
+    return item
 
-    There is intentionally no low-quality fallback. If nothing meets the semantic
-    gate, the truthful product state is an empty curated set while monitored venue
-    inventory remains visible separately in /api/v1/status.
-    """
+
+def curate_semantic_discovery(items: list[dict[str, object]], *, now: datetime | None = None) -> list[dict[str, object]]:
+    """Return markets that satisfy the strict user-facing Discovery promise."""
     current = now or datetime.now(timezone.utc)
     curated: list[dict[str, object]] = []
     for source in items:
         decision = evaluate_discovery_market(source, now=current)
         if not decision.eligible:
             continue
-        item = dict(source)
-        item["relevance_score"] = decision.relevance
-        item["relevance_reasons"] = list(decision.reasons)
-        item["activity_confidence"] = decision.activity_confidence
-        item["attention_reason_code"] = decision.reason_code
-        item["semantic_discovery_version"] = SEMANTIC_DISCOVERY_VERSION
-        curated.append(item)
+        curated.append(_decorate(source, decision, tier="attention"))
     return curated
+
+
+def curate_best_available(
+    items: list[dict[str, object]],
+    *,
+    now: datetime | None = None,
+    limit: int = BEST_AVAILABLE_LIMIT,
+) -> list[dict[str, object]]:
+    """Return a bounded, still-quality-screened set when strict Kalshi Discovery is empty.
+
+    This is not a low-quality fallback: structurally invalid markets and the known
+    thin-activity escape class stay excluded. The caller must expose the response
+    mode so production tests can distinguish strict attention cards from
+    best-available venue cards.
+    """
+    current = now or datetime.now(timezone.utc)
+    available: list[dict[str, object]] = []
+    for source in items:
+        decision = evaluate_discovery_market(source, now=current)
+        volume = _number(source.get("volume_usd"))
+        if decision.reason_code == "invalid_market":
+            continue
+        if volume is None or volume < MIN_BEST_AVAILABLE_VOLUME_USD:
+            continue
+        if decision.relevance < MIN_BEST_AVAILABLE_RELEVANCE_SCORE:
+            continue
+        available.append(_decorate(source, decision, tier="best_available"))
+        if len(available) >= max(1, limit):
+            break
+    return available
