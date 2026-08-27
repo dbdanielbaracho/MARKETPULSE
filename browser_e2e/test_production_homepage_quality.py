@@ -8,8 +8,12 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from app.middleware.home_client_dedup import (
-    CURATION_VERSION as EXPECTED_CURATION,
     RENDER_CURATION_VERSION as EXPECTED_RENDER_CURATION,
+)
+from app.services.discovery_semantics import (
+    MIN_DISCOVERY_RELEVANCE_SCORE,
+    MIN_DISCOVERY_VOLUME_USD,
+    SEMANTIC_DISCOVERY_VERSION,
 )
 
 pytest.importorskip("playwright.sync_api")
@@ -25,7 +29,7 @@ RAILWAY = os.getenv(
     "PREDIBEACON_RAILWAY_URL",
     "https://marketpulse-production-aa9f.up.railway.app",
 )
-MIN_RELEVANCE = 5.0
+MIN_RELEVANCE = MIN_DISCOVERY_RELEVANCE_SCORE
 MAX_PER_SUBJECT_PER_VENUE = 2
 
 
@@ -91,14 +95,24 @@ def _parse_dt(value: str | None) -> datetime | None:
 def _assert_curated_payload(response, *, label: str) -> None:
     assert response.ok, (label, response.status)
     headers = {key.casefold(): value for key, value in response.headers.items()}
-    assert headers.get("x-predibeacon-curation") == EXPECTED_CURATION, (label, headers)
-    assert "x-predibeacon-curation-input" in headers, (label, headers)
-    assert "x-predibeacon-curation-output" in headers, (label, headers)
+    assert headers.get("x-predibeacon-semantic-discovery") == SEMANTIC_DISCOVERY_VERSION, (
+        label,
+        headers,
+    )
+    assert "x-predibeacon-monitored-candidate-count" in headers, (label, headers)
+    assert "x-predibeacon-curated-count" in headers, (label, headers)
 
     items = response.json()
     assert isinstance(items, list), (label, type(items))
-    assert int(headers["x-predibeacon-curation-output"]) == len(items), (label, headers, len(items))
-    assert int(headers["x-predibeacon-curation-input"]) >= len(items), (label, headers)
+    assert int(headers["x-predibeacon-curated-count"]) == len(items), (
+        label,
+        headers,
+        len(items),
+    )
+    assert int(headers["x-predibeacon-monitored-candidate-count"]) >= len(items), (
+        label,
+        headers,
+    )
 
     now = datetime.now(timezone.utc)
     exact_seen: set[tuple[str, str]] = set()
@@ -110,12 +124,12 @@ def _assert_curated_payload(response, *, label: str) -> None:
         title = item.get("title")
         venue = item.get("venue")
         volume = item.get("volume_usd")
-        relevance = item.get("trend_score")
+        relevance = item.get("relevance_score")
 
         assert isinstance(market_id, str) and market_id, (label, item)
         assert isinstance(title, str) and title.strip(), (label, market_id)
         assert venue in {"kalshi", "polymarket"}, (label, market_id, venue)
-        assert isinstance(volume, (int, float)) and not isinstance(volume, bool) and volume > 0, (
+        assert isinstance(volume, (int, float)) and not isinstance(volume, bool) and volume >= MIN_DISCOVERY_VOLUME_USD, (
             label,
             market_id,
             volume,
@@ -232,7 +246,7 @@ def _select_visible_venue(page, venue_value: str) -> None:
     _wait_for_market_render(page)
 
 
-def test_custom_and_railway_origins_execute_same_quality_gate():
+def test_custom_and_railway_origins_execute_same_discovery_gate():
     with sync_playwright() as p:
         request = p.request.new_context()
         try:
@@ -248,7 +262,7 @@ def test_custom_and_railway_origins_execute_same_quality_gate():
                     "?category=Sports&limit=100",
                     "?category=Tech&limit=100",
                 ):
-                    response = request.get(base + "/api/v1/markets" + query, timeout=30_000)
+                    response = request.get(base + "/api/v1/discovery" + query, timeout=30_000)
                     _assert_curated_payload(response, label=f"{label}:{query}")
         finally:
             request.dispose()
