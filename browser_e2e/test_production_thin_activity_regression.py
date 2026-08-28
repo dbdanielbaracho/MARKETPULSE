@@ -9,6 +9,7 @@ from app.services.discovery_semantics import (
     MIN_BEST_AVAILABLE_VOLUME_USD,
     MIN_DISCOVERY_VOLUME_USD,
     SEMANTIC_DISCOVERY_VERSION,
+    evaluate_discovery_market,
 )
 
 pytest.importorskip("playwright.sync_api")
@@ -27,7 +28,49 @@ RAILWAY = os.getenv(
 ESCAPED_TITLE = "Chicago WS wins by over 9.5 runs?"
 
 
-def _assert_ranked_payload(label: str, response, *, sorted_by_trend: bool) -> None:
+def _diagnose_empty(request, base: str, venue: str, sort: str) -> dict[str, object]:
+    raw = request.get(
+        base + f"/api/v1/markets?venue={venue}&sort={sort}&limit=100",
+        timeout=30_000,
+    )
+    payload = raw.json() if raw.ok else []
+    sample = []
+    reason_counts: dict[str, int] = {}
+    for item in payload:
+        decision = evaluate_discovery_market(item)
+        reason_counts[decision.reason_code] = reason_counts.get(decision.reason_code, 0) + 1
+        if len(sample) < 12:
+            sample.append(
+                {
+                    "canonical_id": item.get("canonical_id"),
+                    "title": item.get("title"),
+                    "volume_usd": item.get("volume_usd"),
+                    "trend_score": item.get("trend_score"),
+                    "probability_change": item.get("probability_change"),
+                    "closes_at": item.get("closes_at"),
+                    "eligible": decision.eligible,
+                    "relevance": decision.relevance,
+                    "reason_code": decision.reason_code,
+                }
+            )
+    return {
+        "inventory_status": raw.status,
+        "inventory_count": len(payload) if isinstance(payload, list) else None,
+        "reason_counts": reason_counts,
+        "sample": sample,
+    }
+
+
+def _assert_ranked_payload(
+    label: str,
+    response,
+    *,
+    sorted_by_trend: bool,
+    request,
+    base: str,
+    venue: str,
+    sort: str,
+) -> None:
     assert response.ok, (label, response.status)
     headers = {key.casefold(): value for key, value in response.headers.items()}
     assert headers.get("x-predibeacon-semantic-discovery") == SEMANTIC_DISCOVERY_VERSION, (
@@ -39,7 +82,12 @@ def _assert_ranked_payload(label: str, response, *, sorted_by_trend: bool) -> No
 
     items = response.json()
     assert isinstance(items, list), (label, type(items))
-    assert items, (label, "expected at least one real production Discovery card")
+    if not items:
+        diagnostics = _diagnose_empty(request, base, venue, sort)
+        pytest.fail(
+            f"{label}: expected at least one real production Discovery card; "
+            f"headers={headers}; diagnostics={diagnostics}"
+        )
     assert int(headers.get("x-predibeacon-curated-count", "-1")) == len(items), (
         label,
         headers,
@@ -86,6 +134,10 @@ def test_real_production_has_ranked_cards_for_each_supported_venue():
                         label + f":{venue}:movers",
                         movers,
                         sorted_by_trend=False,
+                        request=request,
+                        base=base,
+                        venue=venue,
+                        sort="movers",
                     )
 
                     trending = request.get(
@@ -96,6 +148,10 @@ def test_real_production_has_ranked_cards_for_each_supported_venue():
                         label + f":{venue}:trending",
                         trending,
                         sorted_by_trend=True,
+                        request=request,
+                        base=base,
+                        venue=venue,
+                        sort="trending",
                     )
 
                 top = request.get(base + "/top", timeout=30_000)
