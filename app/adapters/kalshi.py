@@ -12,6 +12,9 @@ from app.services.categories import classify_market_category
 
 
 class KalshiAdapter:
+    _MAX_PAGE_SIZE = 1000
+    _MAX_ACTIVITY_SCAN_MARKETS = 5000
+
     def __init__(self, base_url: str, timeout_seconds: float = 10.0) -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout_seconds = timeout_seconds
@@ -20,13 +23,20 @@ class KalshiAdapter:
         if limit < 1:
             return [], cursor
 
+        # Kalshi's open-market endpoint is cursor-paginated but does not provide
+        # an activity sort. The first page can therefore be dominated by dormant
+        # contracts. Scan a bounded provider pool, rank by the same current-activity
+        # contract used by PrediBeacon intelligence, then enrich only the publish
+        # set. Five 1,000-row pages keeps the refresh bounded while avoiding the
+        # first-page bias observed in production.
+        scan_limit = max(limit, self._MAX_ACTIVITY_SCAN_MARKETS)
         raw_markets: list[dict[str, Any]] = []
         next_cursor = cursor
         seen_cursors: set[str] = set()
 
         async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
-            while len(raw_markets) < limit:
-                page_limit = min(limit - len(raw_markets), 1000)
+            while len(raw_markets) < scan_limit:
+                page_limit = min(scan_limit - len(raw_markets), self._MAX_PAGE_SIZE)
                 params: dict[str, Any] = {
                     "limit": page_limit,
                     "status": "open",
@@ -52,16 +62,27 @@ class KalshiAdapter:
                 seen_cursors.add(returned_cursor)
                 next_cursor = returned_cursor
 
-                # A provider page may legitimately contain fewer rows than requested
-                # while still advertising a cursor. Continue until the requested
-                # inventory size is filled or pagination is exhausted.
                 if not page and next_cursor:
                     continue
 
-            raw_markets = raw_markets[:limit]
-            await self._enrich_missing_series_tickers(client, raw_markets)
-            await self._enrich_series_metadata(client, raw_markets)
-        return [self.normalize(item) for item in raw_markets], next_cursor
+            raw_markets.sort(key=self._activity_rank_key, reverse=True)
+            selected = raw_markets[:limit]
+            await self._enrich_missing_series_tickers(client, selected)
+            await self._enrich_series_metadata(client, selected)
+        return [self.normalize(item) for item in selected], next_cursor
+
+    @classmethod
+    def _activity_rank_key(cls, item: dict[str, Any]) -> tuple[float, float]:
+        """Rank by current reported activity, with lifetime volume as context.
+
+        A provider-reported 24h value of zero is meaningful and must remain zero;
+        lifetime volume is only the secondary tie-breaker. This mirrors
+        `current_activity_usd()` in the intelligence layer.
+        """
+        volume_24h = cls._usd_notional_volume_24h(item)
+        lifetime = cls._usd_notional_volume(item) or 0.0
+        current = lifetime if volume_24h is None else volume_24h
+        return (current, lifetime)
 
     async def _enrich_missing_series_tickers(
         self,
@@ -193,8 +214,6 @@ class KalshiAdapter:
 
         raw_notional = item.get("notional_value_dollars")
         if raw_notional is None:
-            # Standard Kalshi binary contracts pay at most $1 per contract. Keep
-            # legacy compatibility for payloads that omit the explicit notional.
             notional = Decimal("1")
         else:
             notional = KalshiAdapter._decimal(raw_notional)
