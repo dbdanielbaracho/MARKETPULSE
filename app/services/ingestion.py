@@ -75,12 +75,6 @@ class IngestionWorker:
         if not isinstance(result, list):
             raise TypeError(f"{venue} adapter returned an invalid market collection")
 
-        # Kalshi categories live on Series, while the global /markets cursor is
-        # not category-aware. Production evidence proved that the first 5,000
-        # open markets can omit all Science & Technology and virtually all
-        # Politics contracts. Add a bounded Series->Events->Markets complement
-        # before intelligence ranking; do not reserve display slots or weaken
-        # any semantic quality floor.
         if venue == "kalshi":
             base_url = str(getattr(fetcher, "base_url", "") or "").strip()
             timeout_seconds = float(getattr(fetcher, "timeout_seconds", 10.0) or 10.0)
@@ -90,6 +84,7 @@ class IngestionWorker:
                     timeout_seconds=timeout_seconds,
                 )
                 if extras:
+                    global_count = len(result)
                     merged: list[NormalizedMarket] = []
                     seen: set[str] = set()
                     for market in [*result, *extras]:
@@ -101,7 +96,7 @@ class IngestionWorker:
                     result = merged
                     logger.info(
                         "kalshi candidate universe broadened global=%d category_aware=%d merged=%d",
-                        len(result) - len(extras),
+                        global_count,
                         len(extras),
                         len(result),
                     )
