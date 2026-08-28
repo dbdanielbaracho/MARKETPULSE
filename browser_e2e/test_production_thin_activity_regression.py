@@ -39,6 +39,7 @@ def _assert_ranked_payload(label: str, response, *, sorted_by_trend: bool) -> No
 
     items = response.json()
     assert isinstance(items, list), (label, type(items))
+    assert items, (label, "expected at least one real production Discovery card")
     assert int(headers.get("x-predibeacon-curated-count", "-1")) == len(items), (
         label,
         headers,
@@ -71,22 +72,31 @@ def _assert_ranked_payload(label: str, response, *, sorted_by_trend: bool) -> No
     assert not escaped, (label, escaped)
 
 
-def test_real_production_uses_shared_activity_confidence_for_movers_trending_and_top():
+def test_real_production_has_ranked_cards_for_each_supported_venue():
     with sync_playwright() as p:
         request = p.request.new_context()
         try:
             for label, base in (("custom", CUSTOM), ("railway", RAILWAY)):
-                movers = request.get(
-                    base + "/api/v1/discovery?venue=kalshi&sort=movers&limit=100",
-                    timeout=30_000,
-                )
-                _assert_ranked_payload(label + ":movers", movers, sorted_by_trend=False)
+                for venue in ("kalshi", "polymarket"):
+                    movers = request.get(
+                        base + f"/api/v1/discovery?venue={venue}&sort=movers&limit=100",
+                        timeout=30_000,
+                    )
+                    _assert_ranked_payload(
+                        label + f":{venue}:movers",
+                        movers,
+                        sorted_by_trend=False,
+                    )
 
-                trending = request.get(
-                    base + "/api/v1/discovery?venue=kalshi&sort=trending&limit=100",
-                    timeout=30_000,
-                )
-                _assert_ranked_payload(label + ":trending", trending, sorted_by_trend=True)
+                    trending = request.get(
+                        base + f"/api/v1/discovery?venue={venue}&sort=trending&limit=100",
+                        timeout=30_000,
+                    )
+                    _assert_ranked_payload(
+                        label + f":{venue}:trending",
+                        trending,
+                        sorted_by_trend=True,
+                    )
 
                 top = request.get(base + "/top", timeout=30_000)
                 assert top.ok, (label, top.status)
