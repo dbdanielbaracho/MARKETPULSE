@@ -4,18 +4,18 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.main import DiscoveryMarket, set_discovery_markets
-from app.routes.public_discovery import _soft_category_diversity, router
+from app.routes.public_discovery import _rank_value, _soft_category_diversity, router
 
 NOW = datetime.now(timezone.utc)
 
 
-def _market(identifier: str, title: str, *, category: str, change: float, volume: float = 5000, trend: float = 70) -> DiscoveryMarket:
+def _market(identifier: str, title: str, *, category: str, change: float, volume: float = 5000, trend: float = 70, probability: float = 0.5) -> DiscoveryMarket:
     return DiscoveryMarket(
         canonical_id=identifier,
         title=title,
         venue="kalshi",
         category=category,
-        probability=0.5,
+        probability=probability,
         probability_change=change,
         volume_usd=volume,
         trend_score=trend,
@@ -54,6 +54,20 @@ def test_discovery_exposes_machine_readable_category_coverage():
     coverage = response.headers["x-predibeacon-category-coverage"]
     assert "Politics:1" in coverage
     assert "Tech:1" in coverage
+
+
+def test_stable_near_resolved_market_gets_less_editorial_priority_but_is_not_removed():
+    ordinary = {"probability": .55, "probability_change": 0.0, "attention_score": 80, "relevance_score": 80, "trend_score": 70, "volume_usd": 10000}
+    extreme = {"probability": .99, "probability_change": 0.0, "attention_score": 100, "relevance_score": 100, "trend_score": 90, "volume_usd": 20000}
+    assert _rank_value(ordinary, "trending")[0] > _rank_value(extreme, "trending")[0]
+    assert _rank_value(extreme, "volume")[0] == 20000
+
+
+def test_meaningfully_moving_near_resolved_market_keeps_full_relevance_credit():
+    extreme = {"probability": 1.0, "probability_change": .02, "attention_score": 91, "relevance_score": 90, "trend_score": 80, "volume_usd": 12000}
+    ordinary = {"probability": .60, "probability_change": .02, "attention_score": 90, "relevance_score": 90, "trend_score": 80, "volume_usd": 12000}
+    assert _rank_value(extreme, "trending")[0] == 91
+    assert _rank_value(extreme, "trending")[0] > _rank_value(ordinary, "trending")[0]
 
 
 def test_soft_diversity_breaks_only_long_near_tied_category_streaks():
