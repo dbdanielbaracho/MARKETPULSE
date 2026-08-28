@@ -20,6 +20,9 @@ router = APIRouter()
 
 _PUBLIC_CATEGORIES = ("Economy", "Politics", "Sports", "Tech")
 _MIN_VISIBLE_MOVE = 0.0005  # 0.05 percentage points; avoids rendering 0.0 pts as a mover.
+_NEAR_RESOLVED_PROBABILITY = 0.01
+_MEANINGFUL_EXTREME_MOVE = 0.005  # 0.5 percentage points: informative movement cancels the penalty.
+_NEAR_RESOLVED_RELEVANCE_FACTOR = 0.65
 
 
 def _number(value: object) -> float | None:
@@ -74,6 +77,24 @@ def _candidate_universe(
     return candidates
 
 
+def _informational_relevance_factor(item: dict[str, object]) -> float:
+    """Reduce editorial priority of stable contracts already near certainty.
+
+    A 0/1/99/100% market can still be useful, so it is never removed here.
+    The penalty applies only while the contract is both near-resolved and stable;
+    meaningful fresh movement restores full ranking credit. Explicit volume and
+    movers views remain truthful to their requested signal and are not altered.
+    """
+    probability = _number(item.get("probability"))
+    if probability is None:
+        return 1.0
+    near_resolved = probability <= _NEAR_RESOLVED_PROBABILITY or probability >= 1 - _NEAR_RESOLVED_PROBABILITY
+    if not near_resolved:
+        return 1.0
+    change = abs(_number(item.get("probability_change")) or 0.0)
+    return 1.0 if change >= _MEANINGFUL_EXTREME_MOVE else _NEAR_RESOLVED_RELEVANCE_FACTOR
+
+
 def _rank_value(item: dict[str, object], sort: str) -> tuple[float, ...]:
     change = abs(_number(item.get("probability_change")) or 0.0)
     volume = _number(item.get("volume_usd")) or 0.0
@@ -84,7 +105,8 @@ def _rank_value(item: dict[str, object], sort: str) -> tuple[float, ...]:
         return (change, attention, volume)
     if sort == "volume":
         return (volume, attention, relevance)
-    return (attention, relevance, trend, volume)
+    factor = _informational_relevance_factor(item)
+    return (attention * factor, relevance * factor, trend, volume)
 
 
 def _soft_category_diversity(
