@@ -28,7 +28,7 @@ def test_cross_platform_messages_are_native_portuguese():
         'Verificando ${otherVenue(venue)} para o mesmo contrato',
         'Também na ${venueLabel(counterpart.venue)} · equivalente verificado',
         'Mercado semelhante encontrado na ${venueLabel(counterpart.venue)}, mas não foi verificado como o mesmo contrato.',
-        'Nenhum equivalente verificado encontrado na ${other}.',
+        'Sem equivalente verificado na ${other}.',
         'Verificação entre plataformas temporariamente indisponível.',
         'Confiança da verificação ${verification.confidence}/100.',
     ):
