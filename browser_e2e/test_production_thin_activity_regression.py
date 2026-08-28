@@ -28,18 +28,35 @@ RAILWAY = os.getenv(
 ESCAPED_TITLE = "Chicago WS wins by over 9.5 runs?"
 
 
-def _diagnose_empty(request, base: str, venue: str, sort: str) -> dict[str, object]:
+def _pool_snapshot(request, base: str, venue: str, sort: str) -> dict[str, object]:
     raw = request.get(
         base + f"/api/v1/markets?venue={venue}&sort={sort}&limit=100",
         timeout=30_000,
     )
     payload = raw.json() if raw.ok else []
+    if not isinstance(payload, list):
+        payload = []
+
     sample = []
     reason_counts: dict[str, int] = {}
+    volumes: list[float] = []
+    best_available_eligible = 0
+    strict_eligible = 0
     for item in payload:
         decision = evaluate_discovery_market(item)
         reason_counts[decision.reason_code] = reason_counts.get(decision.reason_code, 0) + 1
-        if len(sample) < 12:
+        volume = item.get("volume_usd")
+        numeric_volume = float(volume) if isinstance(volume, (int, float)) and not isinstance(volume, bool) else 0.0
+        volumes.append(numeric_volume)
+        if decision.eligible:
+            strict_eligible += 1
+        if (
+            decision.reason_code != "invalid_market"
+            and numeric_volume >= MIN_BEST_AVAILABLE_VOLUME_USD
+            and decision.relevance >= 12
+        ):
+            best_available_eligible += 1
+        if len(sample) < 8:
             sample.append(
                 {
                     "canonical_id": item.get("canonical_id"),
@@ -53,11 +70,37 @@ def _diagnose_empty(request, base: str, venue: str, sort: str) -> dict[str, obje
                     "reason_code": decision.reason_code,
                 }
             )
+
+    discovery = request.get(
+        base + f"/api/v1/discovery?venue={venue}&sort={sort}&limit=100",
+        timeout=30_000,
+    )
+    discovery_items = discovery.json() if discovery.ok else []
+    if not isinstance(discovery_items, list):
+        discovery_items = []
+    discovery_headers = {key.casefold(): value for key, value in discovery.headers.items()}
+
     return {
+        "sort": sort,
         "inventory_status": raw.status,
-        "inventory_count": len(payload) if isinstance(payload, list) else None,
+        "inventory_count": len(payload),
+        "max_volume_usd": max(volumes, default=0.0),
+        "count_volume_gte_500": sum(1 for value in volumes if value >= MIN_BEST_AVAILABLE_VOLUME_USD),
+        "count_volume_gte_1000": sum(1 for value in volumes if value >= MIN_DISCOVERY_VOLUME_USD),
+        "strict_eligible": strict_eligible,
+        "best_available_eligible": best_available_eligible,
         "reason_counts": reason_counts,
+        "discovery_count": len(discovery_items),
+        "discovery_mode": discovery_headers.get("x-predibeacon-discovery-mode"),
+        "monitored_candidate_count": discovery_headers.get("x-predibeacon-monitored-candidate-count"),
         "sample": sample,
+    }
+
+
+def _diagnose_empty(request, base: str, venue: str) -> dict[str, object]:
+    return {
+        sort: _pool_snapshot(request, base, venue, sort)
+        for sort in ("movers", "volume", "trending")
     }
 
 
@@ -69,7 +112,6 @@ def _assert_ranked_payload(
     request,
     base: str,
     venue: str,
-    sort: str,
 ) -> None:
     assert response.ok, (label, response.status)
     headers = {key.casefold(): value for key, value in response.headers.items()}
@@ -83,10 +125,10 @@ def _assert_ranked_payload(
     items = response.json()
     assert isinstance(items, list), (label, type(items))
     if not items:
-        diagnostics = _diagnose_empty(request, base, venue, sort)
+        diagnostics = _diagnose_empty(request, base, venue)
         pytest.fail(
             f"{label}: expected at least one real production Discovery card; "
-            f"headers={headers}; diagnostics={diagnostics}"
+            f"headers={headers}; pool_diagnostics={diagnostics}"
         )
     assert int(headers.get("x-predibeacon-curated-count", "-1")) == len(items), (
         label,
@@ -137,7 +179,6 @@ def test_real_production_has_ranked_cards_for_each_supported_venue():
                         request=request,
                         base=base,
                         venue=venue,
-                        sort="movers",
                     )
 
                     trending = request.get(
@@ -151,7 +192,6 @@ def test_real_production_has_ranked_cards_for_each_supported_venue():
                         request=request,
                         base=base,
                         venue=venue,
-                        sort="trending",
                     )
 
                 top = request.get(base + "/top", timeout=30_000)
