@@ -17,19 +17,51 @@ class KalshiAdapter:
         self.timeout_seconds = timeout_seconds
 
     async def fetch_markets(self, limit: int = 100, cursor: str | None = None) -> tuple[list[NormalizedMarket], str | None]:
-        params: dict[str, Any] = {"limit": limit, "status": "open", "mve_filter": "exclude"}
-        if cursor:
-            params["cursor"] = cursor
+        if limit < 1:
+            return [], cursor
+
+        raw_markets: list[dict[str, Any]] = []
+        next_cursor = cursor
+        seen_cursors: set[str] = set()
+
         async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
-            response = await client.get(f"{self.base_url}/markets", params=params)
-            response.raise_for_status()
-            payload = response.json()
-            raw_markets = payload.get("markets", [])
-            if not isinstance(raw_markets, list):
-                raw_markets = []
+            while len(raw_markets) < limit:
+                page_limit = min(limit - len(raw_markets), 1000)
+                params: dict[str, Any] = {
+                    "limit": page_limit,
+                    "status": "open",
+                    "mve_filter": "exclude",
+                }
+                if next_cursor:
+                    params["cursor"] = next_cursor
+
+                response = await client.get(f"{self.base_url}/markets", params=params)
+                response.raise_for_status()
+                payload = response.json()
+                if not isinstance(payload, dict):
+                    payload = {}
+                page = payload.get("markets", [])
+                if not isinstance(page, list):
+                    page = []
+                raw_markets.extend(item for item in page if isinstance(item, dict))
+
+                returned_cursor = str(payload.get("cursor") or "").strip() or None
+                if returned_cursor is None or returned_cursor in seen_cursors:
+                    next_cursor = returned_cursor
+                    break
+                seen_cursors.add(returned_cursor)
+                next_cursor = returned_cursor
+
+                # A provider page may legitimately contain fewer rows than requested
+                # while still advertising a cursor. Continue until the requested
+                # inventory size is filled or pagination is exhausted.
+                if not page and next_cursor:
+                    continue
+
+            raw_markets = raw_markets[:limit]
             await self._enrich_missing_series_tickers(client, raw_markets)
             await self._enrich_series_metadata(client, raw_markets)
-        return [self.normalize(item) for item in raw_markets], payload.get("cursor")
+        return [self.normalize(item) for item in raw_markets], next_cursor
 
     async def _enrich_missing_series_tickers(
         self,
