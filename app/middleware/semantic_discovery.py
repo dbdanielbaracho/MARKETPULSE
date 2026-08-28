@@ -22,7 +22,33 @@ _SEMANTIC_SCRIPT = r'''<script data-predibeacon-semantic-discovery="semantic-dis
     ar: {sharp_move_with_activity:'تدعم الحركة القوية في الاحتمال نشاطات سوق مُبلغ عنها ذات أهمية.',closing_soon:'يغلق هذا العقد ذو النشاط المادي خلال 72 ساعة.',high_activity:'يجعل النشاط المرتفع المُبلغ عنه هذا السوق جديراً بالمتابعة.',meaningful_move:'تدعم حركة احتمال ذات معنى نشاطات السوق المُبلغ عنها.',high_relevance:'تصنف PrediBeacon هذا السوق حالياً على أنه عالي الصلة.',balanced_signal:'تجعل الحركة والنشاط المادي والحداثة والتوافر هذا السوق ذا صلة الآن.',empty:'لا يوجد سوق يحقق حالياً معايير الاهتمام الموثقة لدى PrediBeacon لهذه المرشحات.'}
   };
   const dictionary = () => phrases[language()] || phrases.en;
-  window.why = function(m) { const code=m&&m.attention_reason_code; return dictionary()[code] || dictionary().balanced_signal; };
+  const numeric = value => typeof value==='number' && Number.isFinite(value) ? value : null;
+  const compactVolume = value => {
+    const n=numeric(value); if(n===null)return null;
+    try{return new Intl.NumberFormat(language(),{notation:'compact',maximumFractionDigits:1}).format(n)}catch(_){return Math.round(n).toLocaleString()}
+  };
+  const highRelevanceWhy = m => {
+    const score=numeric(m&&m.relevance_score), volume=compactVolume(m&&m.volume_usd), lang=language();
+    if(lang==='pt-br'){
+      if(score!==null&&volume)return `Relevância ${Math.round(score)}/100, com cerca de ${volume} em volume informado pela plataforma.`;
+      if(score!==null)return `Relevância ${Math.round(score)}/100 pelos sinais atuais de movimento, atividade, prazo e qualidade dos dados.`;
+      if(volume)return `O volume informado de cerca de ${volume}, combinado aos demais sinais atuais, eleva a relevância deste mercado.`;
+    }
+    if(lang==='es'){
+      if(score!==null&&volume)return `Relevancia ${Math.round(score)}/100, con aproximadamente ${volume} de volumen informado por la plataforma.`;
+      if(score!==null)return `Relevancia ${Math.round(score)}/100 según movimiento, actividad, plazo y calidad de datos actuales.`;
+    }
+    if(lang==='en'){
+      if(score!==null&&volume)return `Relevance ${Math.round(score)}/100, with about ${volume} in venue-reported volume.`;
+      if(score!==null)return `Relevance ${Math.round(score)}/100 based on current movement, activity, timing and data quality.`;
+    }
+    return dictionary().high_relevance;
+  };
+  window.why = function(m) {
+    const code=m&&m.attention_reason_code;
+    if(code==='high_relevance')return highRelevanceWhy(m);
+    return dictionary()[code] || dictionary().balanced_signal;
+  };
   const rewriteEmptyState = () => {
     const state=document.querySelector('#state'), count=document.querySelector('#count');
     if(!state||!count)return;
