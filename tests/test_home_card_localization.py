@@ -18,11 +18,14 @@ def test_dynamic_card_localization_covers_customer_facing_labels_by_locale():
         "changeUnavailable:'Change unavailable'",
         "changeUnavailable:'Variação indisponível'",
         "changeUnavailable:'Variación no disponible'",
+        "stableMove:'No material move'",
+        "stableMove:'Sem movimento relevante'",
+        "stableMove:'Sin movimiento relevante'",
     ):
         assert phrase in enhanced
 
 
-def test_dynamic_card_localization_handles_new_cards_and_count_updates():
+def test_dynamic_card_localization_handles_new_cards_count_and_zero_move_copy():
     enhanced = enhance_home_card_localization('<html><body><div id="grid"></div><p id="count"></p></body></html>')
 
     assert 'new MutationObserver(scan).observe(grid,{childList:true,subtree:true})' in enhanced
@@ -32,6 +35,8 @@ def test_dynamic_card_localization_handles_new_cards_and_count_updates():
     assert "next=t.unavailable" in enhanced
     assert "const move=card.querySelector('.move')" in enhanced
     assert "t.changeUnavailable" in enhanced
+    assert "move.textContent=t.stableMove" in enhanced
+    assert "0(?:[.,]0)?" in enhanced
     assert "card.dataset.locale='pt-BR'" not in enhanced
 
 
