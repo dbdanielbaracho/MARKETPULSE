@@ -7,7 +7,9 @@ def test_home_enhancer_adds_visible_cross_platform_status():
 
     assert 'platform-availability' in enhanced
     assert 'Disponível na ${venueLabel(venue)}' in enhanced
-    assert 'Nenhum equivalente verificado encontrado na ${other}.' in enhanced
+    assert 'Sem equivalente verificado na ${other}.' in enhanced
+    assert "panel.classList.add('compact')" in enhanced
+    assert '.platform-availability.compact' in enhanced
     assert 'Mercado semelhante encontrado na ${venueLabel(counterpart.venue)}, mas não foi verificado como o mesmo contrato.' in enhanced
     assert 'equivalente verificado' in enhanced
     assert '/api/v1/market/cross-platform?' in enhanced

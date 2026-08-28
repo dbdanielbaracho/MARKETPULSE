@@ -9,6 +9,7 @@ from typing import Awaitable, Callable, Protocol, runtime_checkable
 from app.config.runtime import RuntimeFlags
 from app.domain.markets import NormalizedMarket
 from app.services.intelligence import MarketSignal, signal, snapshot
+from app.services.kalshi_category_pool import fetch_kalshi_category_pool
 from app.services.retry import RetryPolicy, is_transient_http_error, with_retry
 from app.storage.snapshots import SnapshotStore
 
@@ -73,6 +74,32 @@ class IngestionWorker:
             result = result[0]
         if not isinstance(result, list):
             raise TypeError(f"{venue} adapter returned an invalid market collection")
+
+        if venue == "kalshi":
+            base_url = str(getattr(fetcher, "base_url", "") or "").strip()
+            timeout_seconds = float(getattr(fetcher, "timeout_seconds", 10.0) or 10.0)
+            if base_url:
+                extras = await fetch_kalshi_category_pool(
+                    base_url=base_url,
+                    timeout_seconds=timeout_seconds,
+                )
+                if extras:
+                    global_count = len(result)
+                    merged: list[NormalizedMarket] = []
+                    seen: set[str] = set()
+                    for market in [*result, *extras]:
+                        canonical_id = getattr(market, "canonical_id", "")
+                        if not canonical_id or canonical_id in seen:
+                            continue
+                        seen.add(canonical_id)
+                        merged.append(market)
+                    result = merged
+                    logger.info(
+                        "kalshi candidate universe broadened global=%d category_aware=%d merged=%d",
+                        global_count,
+                        len(extras),
+                        len(result),
+                    )
         return result
 
     async def refresh_once(self) -> RefreshBatch:

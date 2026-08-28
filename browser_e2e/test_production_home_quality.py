@@ -97,6 +97,9 @@ def test_real_homepage_visible_cards_never_show_known_bad_quality_patterns():
             else:
                 pytest.fail("production homepage did not render visible market cards within 25 seconds")
 
+            # Let lazy cross-platform status and localization observers settle for
+            # the cards actually in the viewport before asserting customer copy.
+            page.wait_for_timeout(1200)
             cards = page.locator(".card:visible")
             texts = [cards.nth(i).inner_text() for i in range(cards.count())]
             assert texts, "no visible homepage market cards"
@@ -110,8 +113,24 @@ def test_real_homepage_visible_cards_never_show_known_bad_quality_patterns():
                     forbidden.append(("zero relevance", compact[:240]))
                 if re.search(r"(?:Fecha em|Closes in)\s*(?:em\s*)?0\s*(?:h|hora|horas|hour|hours)\b", compact, re.I):
                     forbidden.append(("immediate close", compact[:240]))
+                if "Change unavailable" in compact:
+                    forbidden.append(("unlocalized change unavailable", compact[:240]))
+                if re.search(r"[▲▼]\s*0(?:[.,]0)?\s*pts\b", compact, re.I):
+                    forbidden.append(("zero-point movement presented as mover", compact[:240]))
+                if "A PrediBeacon classifica este mercado como de alta relevância neste momento." in compact:
+                    forbidden.append(("generic high-relevance explanation", compact[:240]))
+                if "Nenhum equivalente verificado encontrado" in compact:
+                    forbidden.append(("verbose no-equivalent copy", compact[:240]))
 
             assert not forbidden, forbidden[:20]
+
+            # Source/platform must be visible without opening the card.
+            missing_venue_badge = [
+                i for i in range(cards.count())
+                if cards.nth(i).locator(".venue-badge").count() != 1
+                or not cards.nth(i).locator(".venue-badge").inner_text().strip()
+            ]
+            assert not missing_venue_badge, missing_venue_badge
 
             titles = [
                 cards.nth(i).locator("h3").inner_text().strip()

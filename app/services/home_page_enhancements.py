@@ -4,7 +4,7 @@ from __future__ import annotations
 _HOME_STYLE = r'''<style id="predibeacon-home-platform-visibility-style">
 .compare-panel{display:none!important}
 .discovery-explainer{margin:.7rem 0 1.25rem;padding:.85rem 1rem;border-left:4px solid var(--accent);background:var(--panel);color:var(--muted);line-height:1.55}.discovery-explainer strong{color:var(--text)}
-.platform-availability{margin-top:.8rem;border:1px solid var(--line);border-radius:12px;padding:.75rem .85rem;background:rgba(0,0,0,.12);font-size:.84rem;line-height:1.45}.platform-availability strong{display:block;color:var(--text);margin-bottom:.2rem}.platform-availability .muted{color:var(--muted)}.platform-availability .verified-other{color:var(--accent);font-weight:850}.platform-availability .candidate-other{color:#fbbf24;font-weight:800}.platform-availability .single-venue{color:var(--muted);font-weight:750}
+.platform-availability{margin-top:.8rem;border:1px solid var(--line);border-radius:12px;padding:.75rem .85rem;background:rgba(0,0,0,.12);font-size:.84rem;line-height:1.45}.platform-availability strong{display:block;color:var(--text);margin-bottom:.2rem}.platform-availability .muted{color:var(--muted)}.platform-availability .verified-other{color:var(--accent);font-weight:850}.platform-availability .candidate-other{color:#fbbf24;font-weight:800}.platform-availability .single-venue{color:var(--muted);font-weight:650}.platform-availability.compact{border:0;border-top:1px solid var(--line);border-radius:0;padding:.55rem 0 0;background:transparent}.platform-availability.compact strong{display:inline;margin:0 .35rem 0 0}.platform-availability.compact .single-venue{font-size:.8rem}
 </style>'''
 
 
@@ -56,6 +56,7 @@ _HOME_SCRIPT = r'''<script id="predibeacon-home-platform-visibility-script">
 
   function render(panel,result,venue){
     const current=venueLabel(venue),other=otherVenue(venue);
+    panel.classList.remove('compact');
     if(!result){
       panel.innerHTML=`<strong>Disponível na ${current}</strong><span class="muted">Verificação entre plataformas temporariamente indisponível.</span>`;
       return;
@@ -70,7 +71,8 @@ _HOME_SCRIPT = r'''<script id="predibeacon-home-platform-visibility-script">
       panel.innerHTML=`<strong>Disponível na ${current}</strong><span class="candidate-other">Mercado semelhante encontrado na ${venueLabel(counterpart.venue)}, mas não foi verificado como o mesmo contrato.</span>`;
       return;
     }
-    panel.innerHTML=`<strong>Disponível na ${current}</strong><span class="single-venue">Nenhum equivalente verificado encontrado na ${other}.</span>`;
+    panel.classList.add('compact');
+    panel.innerHTML=`<strong>${current}</strong><span class="single-venue">Sem equivalente verificado na ${other}.</span>`;
   }
 
   async function lookup(id,venue,panel){

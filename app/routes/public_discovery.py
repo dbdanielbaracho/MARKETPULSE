@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 from datetime import datetime, timezone
 from typing import Literal
 
@@ -16,6 +17,12 @@ from app.services.intelligence import attention_score
 
 
 router = APIRouter()
+
+_PUBLIC_CATEGORIES = ("Economy", "Politics", "Sports", "Tech")
+_MIN_VISIBLE_MOVE = 0.0005  # 0.05 percentage points; avoids rendering 0.0 pts as a mover.
+_NEAR_RESOLVED_PROBABILITY = 0.01
+_MEANINGFUL_EXTREME_MOVE = 0.005  # 0.5 percentage points: informative movement cancels the penalty.
+_NEAR_RESOLVED_RELEVANCE_FACTOR = 0.65
 
 
 def _number(value: object) -> float | None:
@@ -36,6 +43,118 @@ def _hours_to_close(value: object, *, now: datetime) -> float | None:
     return (closes_at.astimezone(timezone.utc) - now).total_seconds() / 3600
 
 
+def _candidate_universe(
+    *,
+    sort: Literal["trending", "movers", "volume"],
+    category: str | None,
+    venue: Literal["kalshi", "polymarket"] | None,
+    q: str | None,
+) -> list[dict[str, object]]:
+    """Build a representative universe before semantic curation.
+
+    The raw inventory endpoint is intentionally ranking-oriented and bounded to
+    100 results. Querying only its global top 100 can hide an entire valid
+    category before semantic curation even begins. When no category is selected,
+    combine the global leaders with category leaders, deduplicate by canonical
+    market id, and only then apply the public quality gate and final ranking.
+    This is candidate coverage, not a display quota.
+    """
+    groups = [markets(sort=sort, category=category, venue=venue, q=q, limit=100)]
+    if category is None and not q:
+        groups.extend(
+            markets(sort=sort, category=name, venue=venue, q=None, limit=50)
+            for name in _PUBLIC_CATEGORIES
+        )
+
+    candidates: list[dict[str, object]] = []
+    seen: set[str] = set()
+    for group in groups:
+        for item in group:
+            if item.canonical_id in seen:
+                continue
+            seen.add(item.canonical_id)
+            candidates.append(item.model_dump(mode="json"))
+    return candidates
+
+
+def _informational_relevance_factor(item: dict[str, object]) -> float:
+    """Reduce editorial priority of stable contracts already near certainty.
+
+    A 0/1/99/100% market can still be useful, so it is never removed here.
+    The penalty applies only while the contract is both near-resolved and stable;
+    meaningful fresh movement restores full ranking credit. Explicit volume and
+    movers views remain truthful to their requested signal and are not altered.
+    """
+    probability = _number(item.get("probability"))
+    if probability is None:
+        return 1.0
+    near_resolved = probability <= _NEAR_RESOLVED_PROBABILITY or probability >= 1 - _NEAR_RESOLVED_PROBABILITY
+    if not near_resolved:
+        return 1.0
+    change = abs(_number(item.get("probability_change")) or 0.0)
+    return 1.0 if change >= _MEANINGFUL_EXTREME_MOVE else _NEAR_RESOLVED_RELEVANCE_FACTOR
+
+
+def _rank_value(item: dict[str, object], sort: str) -> tuple[float, ...]:
+    change = abs(_number(item.get("probability_change")) or 0.0)
+    volume = _number(item.get("volume_usd")) or 0.0
+    trend = _number(item.get("trend_score")) or 0.0
+    relevance = _number(item.get("relevance_score")) or 0.0
+    attention = _number(item.get("attention_score")) or 0.0
+    if sort == "movers":
+        return (change, attention, volume)
+    if sort == "volume":
+        return (volume, attention, relevance)
+    factor = _informational_relevance_factor(item)
+    return (attention * factor, relevance * factor, trend, volume)
+
+
+def _soft_category_diversity(
+    items: list[dict[str, object]],
+    *,
+    sort: str,
+    limit: int,
+) -> list[dict[str, object]]:
+    """Prevent a near-tied category from producing a long single-topic streak.
+
+    This never guarantees category slots. It only substitutes a different
+    category when its rank value is close enough to the current leader.
+    """
+    remaining = list(items)
+    result: list[dict[str, object]] = []
+    last_category: str | None = None
+    streak = 0
+    while remaining and len(result) < limit:
+        selected_index = 0
+        leader = remaining[0]
+        leader_category = str(leader.get("category") or "")
+        if leader_category and leader_category == last_category and streak >= 4:
+            leader_score = _rank_value(leader, sort)[0]
+            alternative_index = next(
+                (
+                    index
+                    for index, item in enumerate(remaining[1:], start=1)
+                    if str(item.get("category") or "") not in {"", leader_category}
+                    and (
+                        leader_score <= 0
+                        or _rank_value(item, sort)[0] >= leader_score * 0.85
+                    )
+                ),
+                None,
+            )
+            if alternative_index is not None:
+                selected_index = alternative_index
+        selected = remaining.pop(selected_index)
+        result.append(selected)
+        selected_category = str(selected.get("category") or "")
+        if selected_category and selected_category == last_category:
+            streak += 1
+        else:
+            last_category = selected_category or None
+            streak = 1
+    return result
+
+
 @router.get("/api/v1/discovery", include_in_schema=True)
 def semantic_discovery(
     sort: Literal["trending", "movers", "volume"] = "trending",
@@ -44,23 +163,15 @@ def semantic_discovery(
     q: str | None = Query(default=None, max_length=120),
     limit: int = Query(default=50, ge=1, le=100),
 ) -> JSONResponse:
-    """Return Discovery cards without turning an active Kalshi venue into a dead page.
-
-    Strict semantic-attention cards remain the first choice. If a user explicitly
-    selects Kalshi and none pass the strict gate, a bounded quality-screened
-    best-available set is returned. Known thin/weak Kalshi cards remain excluded.
-    `/api/v1/markets` continues to expose the complete monitored inventory.
-    """
-    raw = markets(sort=sort, category=category, venue=venue, q=q, limit=100)
-    candidates = [item.model_dump(mode="json") for item in raw]
+    """Return quality-screened, representative public Discovery cards."""
+    candidates = _candidate_universe(sort=sort, category=category, venue=venue, q=q)
 
     curated = curate_semantic_discovery(candidates)
     response_mode = "attention"
     if not curated and venue == "kalshi" and candidates:
-        curated = curate_best_available(candidates, limit=limit)
+        curated = curate_best_available(candidates, limit=max(limit, 20))
         if curated:
             response_mode = "best-available"
-    curated = curated[:limit]
 
     now = datetime.now(timezone.utc)
     for item in curated:
@@ -70,6 +181,21 @@ def semantic_discovery(
             volume_usd=_number(item.get("volume_usd")),
             hours_to_close=_hours_to_close(item.get("closes_at"), now=now),
         )
+
+    # A market with no measurable probability movement can be active and
+    # relevant, but it is not a "biggest mover". Keep it available under
+    # Most relevant / Most volume rather than displaying a misleading 0.0 pts.
+    if sort == "movers":
+        curated = [
+            item for item in curated
+            if abs(_number(item.get("probability_change")) or 0.0) >= _MIN_VISIBLE_MOVE
+        ]
+
+    curated.sort(key=lambda item: _rank_value(item, sort), reverse=True)
+    curated = _soft_category_diversity(curated, sort=sort, limit=limit)
+
+    coverage = Counter(str(item.get("category") or "Unclassified") for item in curated)
+    coverage_header = ",".join(f"{name}:{count}" for name, count in sorted(coverage.items()))
     return JSONResponse(
         curated,
         headers={
@@ -77,5 +203,6 @@ def semantic_discovery(
             "X-PrediBeacon-Discovery-Mode": response_mode,
             "X-PrediBeacon-Monitored-Candidate-Count": str(len(candidates)),
             "X-PrediBeacon-Curated-Count": str(len(curated)),
+            "X-PrediBeacon-Category-Coverage": coverage_header,
         },
     )
