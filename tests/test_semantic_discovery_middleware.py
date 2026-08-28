@@ -35,6 +35,15 @@ def test_home_consumes_dedicated_discovery_contract_and_localized_runtime_copy()
     assert "window.why = function(m)" in response.text
 
 
+def test_high_relevance_explanation_uses_actual_score_and_reported_volume():
+    response = TestClient(_app()).get("/")
+    assert "const highRelevanceWhy = m =>" in response.text
+    assert "Relevância ${Math.round(score)}/100" in response.text
+    assert "m&&m.volume_usd" in response.text
+    assert "m&&m.relevance_score" in response.text
+    assert "if(code==='high_relevance')return highRelevanceWhy(m)" in response.text
+
+
 def test_top_consumes_same_semantic_discovery_contract():
     response = TestClient(_app("/top")).get("/top")
     assert response.status_code == 200
