@@ -188,6 +188,33 @@ class _KalshiEnrichmentClient(_RecordingClient):
         raise AssertionError(f"unexpected URL: {url}")
 
 
+class _KalshiPaginationClient(_RecordingClient):
+    async def get(self, url, params=None):
+        params = params or {}
+        self.calls.append((url, params))
+        if not url.endswith("/markets"):
+            raise AssertionError(f"unexpected URL: {url}")
+        cursor = params.get("cursor")
+        if cursor is None:
+            return _FakeResponse({
+                "markets": [
+                    {"ticker": "PAGE1-A", "title": "Page one A", "volume_fp": "100"},
+                    {"ticker": "PAGE1-B", "title": "Page one B", "volume_fp": "200"},
+                    {"ticker": "PAGE1-C", "title": "Page one C", "volume_fp": "300"},
+                ],
+                "cursor": "next-page",
+            })
+        if cursor == "next-page":
+            return _FakeResponse({
+                "markets": [
+                    {"ticker": "PAGE2-A", "title": "Page two A", "volume_fp": "1000"},
+                    {"ticker": "PAGE2-B", "title": "Page two B", "volume_fp": "2000"},
+                ],
+                "cursor": None,
+            })
+        raise AssertionError(f"unexpected cursor: {cursor}")
+
+
 def test_polymarket_fetch_prioritizes_current_volume(monkeypatch):
     client = _RecordingClient([])
     monkeypatch.setattr("app.adapters.polymarket.httpx.AsyncClient", lambda **kwargs: client)
@@ -210,6 +237,30 @@ def test_kalshi_fetch_excludes_multivariate_combos(monkeypatch):
     _, params = client.calls[0]
     assert params["mve_filter"] == "exclude"
     assert params["status"] == "open"
+
+
+def test_kalshi_fetch_follows_cursor_when_first_page_is_sparse(monkeypatch):
+    client = _KalshiPaginationClient({})
+    monkeypatch.setattr("app.adapters.kalshi.httpx.AsyncClient", lambda **kwargs: client)
+
+    markets, cursor = asyncio.run(
+        KalshiAdapter("https://external-api.kalshi.com/trade-api/v2").fetch_markets(limit=5)
+    )
+
+    assert cursor is None
+    assert [market.venue_market_id for market in markets] == [
+        "PAGE1-A",
+        "PAGE1-B",
+        "PAGE1-C",
+        "PAGE2-A",
+        "PAGE2-B",
+    ]
+    market_calls = [(url, params) for url, params in client.calls if url.endswith("/markets")]
+    assert len(market_calls) == 2
+    assert market_calls[0][1]["limit"] == 5
+    assert "cursor" not in market_calls[0][1]
+    assert market_calls[1][1]["limit"] == 2
+    assert market_calls[1][1]["cursor"] == "next-page"
 
 
 def test_kalshi_fetch_enriches_missing_series_from_canonical_event(monkeypatch):
