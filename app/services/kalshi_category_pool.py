@@ -13,10 +13,6 @@ from app.domain.markets import NormalizedMarket
 
 logger = logging.getLogger("marketpulse.kalshi.category_pool")
 
-# Official Kalshi series categories that materially broaden PrediBeacon beyond
-# the sports-heavy ordering of the global /markets cursor. This is discovery,
-# not a display quota: candidates still compete under the existing ranking and
-# semantic quality gates after ingestion.
 TARGET_SERIES_CATEGORIES = (
     "Politics",
     "Science and Technology",
@@ -29,11 +25,12 @@ SERIES_PER_CATEGORY = 5
 MAX_MARKETS_PER_CATEGORY = 30
 MAX_CATEGORY_MARKETS = 120
 CATEGORY_POOL_TTL_SECONDS = 15 * 60
+MAX_EVENT_PAGES_PER_SERIES = 3
 _RATE_LIMIT_DELAYS = (0.5, 1.0, 2.0, 4.0)
 
 # One Uvicorn worker is used in production. A small in-process cache prevents
 # the category complement from multiplying Kalshi requests on each 5-minute
-# refresh. The last good value is also retained as a transient-failure fallback.
+# refresh. The last good value is retained as a transient-failure fallback.
 _CACHE: dict[tuple[str, tuple[str, ...]], tuple[float, list[NormalizedMarket]]] = {}
 
 
@@ -46,9 +43,6 @@ def _number(value: object) -> float:
 
 
 def _series_rank(item: dict[str, Any]) -> float:
-    # Series exposes aggregate provider volume. It is used only to choose a
-    # bounded set of series to inspect; final market ranking still uses 24h
-    # market activity via KalshiAdapter._activity_rank_key.
     return _number(item.get("volume_fp") or item.get("volume"))
 
 
@@ -85,15 +79,17 @@ async def fetch_kalshi_category_pool(
 ) -> list[NormalizedMarket]:
     """Return a bounded category-aware complement to Kalshi's global market scan.
 
-    Kalshi's category is a Series property. The global /markets cursor is not
-    category-aware and production evidence showed that its first 5,000 open
+    Kalshi category belongs to Series. The global /markets cursor is not
+    category-aware and live production evidence showed its first 5,000 open
     contracts contained 0/1,029 Science & Technology markets and only 16/2,415
-    Politics markets. This routine intentionally discovers Series first, then
-    resolves open Events with nested Markets for a small high-signal subset.
+    Politics markets. This routine discovers high-signal Series and resolves
+    their open Events with nested Markets before the existing ranking/quality
+    gates run.
 
-    Results are cached for 15 minutes to protect the upstream API. If a refresh
-    fails transiently, the last good category pool is reused rather than
-    deleting category coverage from the current read model.
+    Results are cached for 15 minutes. Event pagination is bounded to protect
+    the provider but follows cursors so a busy Series is not silently truncated
+    at its first 200 events. If any selected-Series fetch fails, a prior good
+    cache is preferred and the partial result is not cached as authoritative.
     """
     root = base_url.rstrip("/")
     key = (root, tuple(categories))
@@ -125,57 +121,62 @@ async def fetch_kalshi_category_pool(
                     if ticker:
                         selected_series.append((category, ticker))
 
-            # Conservative concurrency avoids the 429 burst reproduced during
-            # the live diagnostic while keeping refresh latency bounded.
             semaphore = asyncio.Semaphore(3)
 
-            async def fetch_series_events(category: str, series_ticker: str) -> list[dict[str, Any]]:
-                try:
-                    async with semaphore:
-                        data = await _get_json(
-                            client,
-                            f"{root}/events",
-                            params={
-                                "series_ticker": series_ticker,
-                                "status": "open",
-                                "with_nested_markets": "true",
-                                "limit": 200,
-                            },
-                        )
-                except (httpx.HTTPError, ValueError, TypeError):
-                    return []
-                events = data.get("events", []) if isinstance(data, dict) else []
-                if not isinstance(events, list):
-                    return []
+            async def fetch_series_events(
+                category: str,
+                series_ticker: str,
+            ) -> tuple[list[dict[str, Any]], bool]:
                 markets: list[dict[str, Any]] = []
-                for event in events:
-                    if not isinstance(event, dict):
-                        continue
-                    event_ticker = str(event.get("event_ticker") or event.get("ticker") or "").strip()
-                    series = str(event.get("series_ticker") or series_ticker).strip()
-                    nested = event.get("markets")
-                    if not isinstance(nested, list):
-                        continue
-                    for raw in nested:
-                        if not isinstance(raw, dict):
-                            continue
-                        item = dict(raw)
-                        if event_ticker and not item.get("event_ticker"):
-                            item["event_ticker"] = event_ticker
-                        if series and not item.get("series_ticker"):
-                            item["series_ticker"] = series
-                        # Category belongs to Series in Kalshi. Preserve that
-                        # official provider metadata on the nested market so the
-                        # normalizer does not infer Politics/Tech from title text.
-                        if category and not item.get("category"):
-                            item["category"] = category
-                        markets.append(item)
-                return markets
+                cursor: str | None = None
+                try:
+                    for _page_number in range(MAX_EVENT_PAGES_PER_SERIES):
+                        params: dict[str, Any] = {
+                            "series_ticker": series_ticker,
+                            "status": "open",
+                            "with_nested_markets": "true",
+                            "limit": 200,
+                        }
+                        if cursor:
+                            params["cursor"] = cursor
+                        async with semaphore:
+                            data = await _get_json(client, f"{root}/events", params=params)
+                        events = data.get("events", []) if isinstance(data, dict) else []
+                        if not isinstance(events, list):
+                            events = []
+                        for event in events:
+                            if not isinstance(event, dict):
+                                continue
+                            event_ticker = str(event.get("event_ticker") or event.get("ticker") or "").strip()
+                            series = str(event.get("series_ticker") or series_ticker).strip()
+                            nested = event.get("markets")
+                            if not isinstance(nested, list):
+                                continue
+                            for raw in nested:
+                                if not isinstance(raw, dict):
+                                    continue
+                                item = dict(raw)
+                                if event_ticker and not item.get("event_ticker"):
+                                    item["event_ticker"] = event_ticker
+                                if series and not item.get("series_ticker"):
+                                    item["series_ticker"] = series
+                                if category and not item.get("category"):
+                                    item["category"] = category
+                                markets.append(item)
+                        next_cursor = str(data.get("cursor") or "").strip() or None
+                        if not next_cursor or next_cursor == cursor:
+                            break
+                        cursor = next_cursor
+                    return markets, True
+                except (httpx.HTTPError, ValueError, TypeError):
+                    return markets, False
 
-            groups = await asyncio.gather(
+            resolved = await asyncio.gather(
                 *(fetch_series_events(category, ticker) for category, ticker in selected_series)
             )
 
+        groups = [markets for markets, _success in resolved]
+        had_partial_failure = any(not success for _markets, success in resolved)
         by_category: dict[str, list[dict[str, Any]]] = {category: [] for category in categories}
         seen: set[str] = set()
         for (category, _), markets in zip(selected_series, groups):
@@ -195,15 +196,20 @@ async def fetch_kalshi_category_pool(
             selected_raw.extend(chosen)
             coverage[category] = len(chosen)
 
-        # Final global cap is only a network/refresh bound, not a display quota.
         selected_raw.sort(key=KalshiAdapter._activity_rank_key, reverse=True)
         selected_raw = selected_raw[:MAX_CATEGORY_MARKETS]
         normalized = [KalshiAdapter.normalize(item) for item in selected_raw]
-        _CACHE[key] = (now, list(normalized))
+
+        if had_partial_failure and cached is not None:
+            logger.warning("kalshi category refresh partial; retaining last complete pool")
+            return list(cached[1])
+        if not had_partial_failure:
+            _CACHE[key] = (now, list(normalized))
         logger.info(
-            "kalshi category pool markets=%d coverage=%s",
+            "kalshi category pool markets=%d coverage=%s partial=%s",
             len(normalized),
             ",".join(f"{category}:{coverage[category]}" for category in categories),
+            had_partial_failure,
         )
         return normalized
     except (httpx.HTTPError, ValueError, TypeError) as exc:
