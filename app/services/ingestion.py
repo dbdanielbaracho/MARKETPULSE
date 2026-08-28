@@ -9,6 +9,7 @@ from typing import Awaitable, Callable, Protocol, runtime_checkable
 from app.config.runtime import RuntimeFlags
 from app.domain.markets import NormalizedMarket
 from app.services.intelligence import MarketSignal, signal, snapshot
+from app.services.kalshi_category_pool import fetch_kalshi_category_pool
 from app.services.retry import RetryPolicy, is_transient_http_error, with_retry
 from app.storage.snapshots import SnapshotStore
 
@@ -73,6 +74,37 @@ class IngestionWorker:
             result = result[0]
         if not isinstance(result, list):
             raise TypeError(f"{venue} adapter returned an invalid market collection")
+
+        # Kalshi categories live on Series, while the global /markets cursor is
+        # not category-aware. Production evidence proved that the first 5,000
+        # open markets can omit all Science & Technology and virtually all
+        # Politics contracts. Add a bounded Series->Events->Markets complement
+        # before intelligence ranking; do not reserve display slots or weaken
+        # any semantic quality floor.
+        if venue == "kalshi":
+            base_url = str(getattr(fetcher, "base_url", "") or "").strip()
+            timeout_seconds = float(getattr(fetcher, "timeout_seconds", 10.0) or 10.0)
+            if base_url:
+                extras = await fetch_kalshi_category_pool(
+                    base_url=base_url,
+                    timeout_seconds=timeout_seconds,
+                )
+                if extras:
+                    merged: list[NormalizedMarket] = []
+                    seen: set[str] = set()
+                    for market in [*result, *extras]:
+                        canonical_id = getattr(market, "canonical_id", "")
+                        if not canonical_id or canonical_id in seen:
+                            continue
+                        seen.add(canonical_id)
+                        merged.append(market)
+                    result = merged
+                    logger.info(
+                        "kalshi candidate universe broadened global=%d category_aware=%d merged=%d",
+                        len(result) - len(extras),
+                        len(extras),
+                        len(result),
+                    )
         return result
 
     async def refresh_once(self) -> RefreshBatch:
