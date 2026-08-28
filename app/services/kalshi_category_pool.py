@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections import Counter
 from typing import Any
 
@@ -27,6 +28,13 @@ TARGET_SERIES_CATEGORIES = (
 SERIES_PER_CATEGORY = 5
 MAX_MARKETS_PER_CATEGORY = 30
 MAX_CATEGORY_MARKETS = 120
+CATEGORY_POOL_TTL_SECONDS = 15 * 60
+_RATE_LIMIT_DELAYS = (0.5, 1.0, 2.0, 4.0)
+
+# One Uvicorn worker is used in production. A small in-process cache prevents
+# the category complement from multiplying Kalshi requests on each 5-minute
+# refresh. The last good value is also retained as a transient-failure fallback.
+_CACHE: dict[tuple[str, tuple[str, ...]], tuple[float, list[NormalizedMarket]]] = {}
 
 
 def _number(value: object) -> float:
@@ -44,11 +52,36 @@ def _series_rank(item: dict[str, Any]) -> float:
     return _number(item.get("volume_fp") or item.get("volume"))
 
 
+async def _get_json(
+    client: httpx.AsyncClient,
+    url: str,
+    *,
+    params: dict[str, Any],
+) -> dict[str, Any]:
+    """Fetch JSON with bounded 429 retry/backoff and no retry on hard 4xx."""
+    for attempt in range(len(_RATE_LIMIT_DELAYS) + 1):
+        response = await client.get(url, params=params)
+        if response.status_code != 429:
+            response.raise_for_status()
+            payload = response.json()
+            return payload if isinstance(payload, dict) else {}
+        if attempt >= len(_RATE_LIMIT_DELAYS):
+            response.raise_for_status()
+        retry_after = response.headers.get("retry-after")
+        try:
+            wait = max(float(retry_after), 0.0) if retry_after is not None else _RATE_LIMIT_DELAYS[attempt]
+        except (TypeError, ValueError):
+            wait = _RATE_LIMIT_DELAYS[attempt]
+        await asyncio.sleep(min(wait, 8.0))
+    return {}
+
+
 async def fetch_kalshi_category_pool(
     *,
     base_url: str,
     timeout_seconds: float = 10.0,
     categories: tuple[str, ...] = TARGET_SERIES_CATEGORIES,
+    now_monotonic: float | None = None,
 ) -> list[NormalizedMarket]:
     """Return a bounded category-aware complement to Kalshi's global market scan.
 
@@ -58,17 +91,27 @@ async def fetch_kalshi_category_pool(
     Politics markets. This routine intentionally discovers Series first, then
     resolves open Events with nested Markets for a small high-signal subset.
 
-    Failure is soft: the existing global Kalshi pool remains the fallback.
+    Results are cached for 15 minutes to protect the upstream API. If a refresh
+    fails transiently, the last good category pool is reused rather than
+    deleting category coverage from the current read model.
     """
     root = base_url.rstrip("/")
+    key = (root, tuple(categories))
+    now = time.monotonic() if now_monotonic is None else now_monotonic
+    cached = _CACHE.get(key)
+    if cached is not None and now - cached[0] < CATEGORY_POOL_TTL_SECONDS:
+        return list(cached[1])
+
     try:
         async with httpx.AsyncClient(timeout=timeout_seconds) as client:
-            response = await client.get(f"{root}/series", params={"include_volume": "true"})
-            response.raise_for_status()
-            payload = response.json()
+            payload = await _get_json(
+                client,
+                f"{root}/series",
+                params={"include_volume": "true"},
+            )
             rows = payload.get("series", []) if isinstance(payload, dict) else []
             if not isinstance(rows, list):
-                return []
+                rows = []
 
             selected_series: list[tuple[str, str]] = []
             for category in categories:
@@ -82,12 +125,15 @@ async def fetch_kalshi_category_pool(
                     if ticker:
                         selected_series.append((category, ticker))
 
-            semaphore = asyncio.Semaphore(4)
+            # Conservative concurrency avoids the 429 burst reproduced during
+            # the live diagnostic while keeping refresh latency bounded.
+            semaphore = asyncio.Semaphore(3)
 
             async def fetch_series_events(category: str, series_ticker: str) -> list[dict[str, Any]]:
                 try:
                     async with semaphore:
-                        result = await client.get(
+                        data = await _get_json(
+                            client,
                             f"{root}/events",
                             params={
                                 "series_ticker": series_ticker,
@@ -96,8 +142,6 @@ async def fetch_kalshi_category_pool(
                                 "limit": 200,
                             },
                         )
-                        result.raise_for_status()
-                    data = result.json()
                 except (httpx.HTTPError, ValueError, TypeError):
                     return []
                 events = data.get("events", []) if isinstance(data, dict) else []
@@ -122,8 +166,7 @@ async def fetch_kalshi_category_pool(
                             item["series_ticker"] = series
                         # Category belongs to Series in Kalshi. Preserve that
                         # official provider metadata on the nested market so the
-                        # normalizer does not have to infer Politics/Tech from
-                        # words in the title.
+                        # normalizer does not infer Politics/Tech from title text.
                         if category and not item.get("category"):
                             item["category"] = category
                         markets.append(item)
@@ -152,10 +195,11 @@ async def fetch_kalshi_category_pool(
             selected_raw.extend(chosen)
             coverage[category] = len(chosen)
 
-        # Final global cap is only a network/refresh bound, not a category quota.
+        # Final global cap is only a network/refresh bound, not a display quota.
         selected_raw.sort(key=KalshiAdapter._activity_rank_key, reverse=True)
         selected_raw = selected_raw[:MAX_CATEGORY_MARKETS]
         normalized = [KalshiAdapter.normalize(item) for item in selected_raw]
+        _CACHE[key] = (now, list(normalized))
         logger.info(
             "kalshi category pool markets=%d coverage=%s",
             len(normalized),
@@ -163,5 +207,6 @@ async def fetch_kalshi_category_pool(
         )
         return normalized
     except (httpx.HTTPError, ValueError, TypeError) as exc:
-        logger.warning("kalshi category pool unavailable: %s", type(exc).__name__)
-        return []
+        logger.warning("kalshi category pool refresh unavailable: %s", type(exc).__name__)
+        stale = _CACHE.get(key)
+        return list(stale[1]) if stale is not None else []
