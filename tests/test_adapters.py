@@ -76,13 +76,9 @@ def test_polymarket_uses_parent_event_slug_for_destination():
         "id": "3595811",
         "question": "Will Elon Musk post 240-259 tweets?",
         "slug": "elon-musk-of-tweets-august-18-august-25-240-259",
-        "events": [{
-            "slug": "elon-musk-of-tweets-august-18-august-25",
-        }],
+        "events": [{"slug": "elon-musk-of-tweets-august-18-august-25"}],
     })
-    assert str(market.source_url) == (
-        "https://polymarket.com/event/elon-musk-of-tweets-august-18-august-25"
-    )
+    assert str(market.source_url) == "https://polymarket.com/event/elon-musk-of-tweets-august-18-august-25"
 
 
 def test_polymarket_falls_back_to_market_slug_without_parent_event():
@@ -131,6 +127,14 @@ def test_kalshi_contract_counts_are_converted_with_provider_notional_value():
     assert market.volume_24h_usd == 125
 
 
+def test_kalshi_activity_rank_prefers_reported_24h_and_preserves_zero():
+    recent = {"volume_fp": "1000", "volume_24h_fp": "600"}
+    dormant = {"volume_fp": "50000", "volume_24h_fp": "0"}
+    legacy = {"volume_fp": "700", "volume_24h_fp": None}
+    assert KalshiAdapter._activity_rank_key(recent) > KalshiAdapter._activity_rank_key(dormant)
+    assert KalshiAdapter._activity_rank_key(legacy) > KalshiAdapter._activity_rank_key(dormant)
+
+
 class _FakeResponse:
     def __init__(self, payload):
         self._payload = payload
@@ -171,20 +175,9 @@ class _KalshiEnrichmentClient(_RecordingClient):
                 "cursor": None,
             })
         if url.endswith("/events/KXMLBTEST-26AUG24"):
-            return _FakeResponse({
-                "event": {
-                    "event_ticker": "KXMLBTEST-26AUG24",
-                    "series_ticker": "KXMLBTEST",
-                }
-            })
+            return _FakeResponse({"event": {"event_ticker": "KXMLBTEST-26AUG24", "series_ticker": "KXMLBTEST"}})
         if url.endswith("/series/KXMLBTEST"):
-            return _FakeResponse({
-                "series": {
-                    "ticker": "KXMLBTEST",
-                    "category": "Sports",
-                    "tags": ["baseball"],
-                }
-            })
+            return _FakeResponse({"series": {"ticker": "KXMLBTEST", "category": "Sports", "tags": ["baseball"]}})
         raise AssertionError(f"unexpected URL: {url}")
 
 
@@ -198,17 +191,17 @@ class _KalshiPaginationClient(_RecordingClient):
         if cursor is None:
             return _FakeResponse({
                 "markets": [
-                    {"ticker": "PAGE1-A", "title": "Page one A", "volume_fp": "100"},
-                    {"ticker": "PAGE1-B", "title": "Page one B", "volume_fp": "200"},
-                    {"ticker": "PAGE1-C", "title": "Page one C", "volume_fp": "300"},
+                    {"ticker": "PAGE1-A", "title": "Page one A", "volume_fp": "100", "volume_24h_fp": "0"},
+                    {"ticker": "PAGE1-B", "title": "Page one B", "volume_fp": "200", "volume_24h_fp": "0"},
+                    {"ticker": "PAGE1-C", "title": "Page one C", "volume_fp": "300", "volume_24h_fp": "0"},
                 ],
                 "cursor": "next-page",
             })
         if cursor == "next-page":
             return _FakeResponse({
                 "markets": [
-                    {"ticker": "PAGE2-A", "title": "Page two A", "volume_fp": "1000"},
-                    {"ticker": "PAGE2-B", "title": "Page two B", "volume_fp": "2000"},
+                    {"ticker": "PAGE2-A", "title": "Page two A", "volume_fp": "1000", "volume_24h_fp": "800"},
+                    {"ticker": "PAGE2-B", "title": "Page two B", "volume_fp": "2000", "volume_24h_fp": "1200"},
                 ],
                 "cursor": None,
             })
@@ -218,9 +211,7 @@ class _KalshiPaginationClient(_RecordingClient):
 def test_polymarket_fetch_prioritizes_current_volume(monkeypatch):
     client = _RecordingClient([])
     monkeypatch.setattr("app.adapters.polymarket.httpx.AsyncClient", lambda **kwargs: client)
-
     asyncio.run(PolymarketAdapter("https://gamma-api.polymarket.com").fetch_markets(limit=25))
-
     _, params = client.calls[0]
     assert params["order"] == "volume24hr"
     assert params["ascending"] == "false"
@@ -231,46 +222,41 @@ def test_polymarket_fetch_prioritizes_current_volume(monkeypatch):
 def test_kalshi_fetch_excludes_multivariate_combos(monkeypatch):
     client = _RecordingClient({"markets": [], "cursor": None})
     monkeypatch.setattr("app.adapters.kalshi.httpx.AsyncClient", lambda **kwargs: client)
-
     asyncio.run(KalshiAdapter("https://external-api.kalshi.com/trade-api/v2").fetch_markets(limit=25))
-
     _, params = client.calls[0]
     assert params["mve_filter"] == "exclude"
     assert params["status"] == "open"
+    assert params["limit"] == 1000
 
 
-def test_kalshi_fetch_follows_cursor_when_first_page_is_sparse(monkeypatch):
+def test_kalshi_fetch_scans_sparse_first_page_and_returns_most_active(monkeypatch):
     client = _KalshiPaginationClient({})
     monkeypatch.setattr("app.adapters.kalshi.httpx.AsyncClient", lambda **kwargs: client)
-
     markets, cursor = asyncio.run(
         KalshiAdapter("https://external-api.kalshi.com/trade-api/v2").fetch_markets(limit=5)
     )
-
     assert cursor is None
     assert [market.venue_market_id for market in markets] == [
-        "PAGE1-A",
-        "PAGE1-B",
-        "PAGE1-C",
-        "PAGE2-A",
         "PAGE2-B",
+        "PAGE2-A",
+        "PAGE1-C",
+        "PAGE1-B",
+        "PAGE1-A",
     ]
     market_calls = [(url, params) for url, params in client.calls if url.endswith("/markets")]
     assert len(market_calls) == 2
-    assert market_calls[0][1]["limit"] == 5
+    assert market_calls[0][1]["limit"] == 1000
     assert "cursor" not in market_calls[0][1]
-    assert market_calls[1][1]["limit"] == 2
+    assert market_calls[1][1]["limit"] == 1000
     assert market_calls[1][1]["cursor"] == "next-page"
 
 
 def test_kalshi_fetch_enriches_missing_series_from_canonical_event(monkeypatch):
     client = _KalshiEnrichmentClient({})
     monkeypatch.setattr("app.adapters.kalshi.httpx.AsyncClient", lambda **kwargs: client)
-
     markets, cursor = asyncio.run(
         KalshiAdapter("https://external-api.kalshi.com/trade-api/v2").fetch_markets(limit=25)
     )
-
     assert cursor is None
     assert len(markets) == 1
     assert str(markets[0].source_url) == "https://kalshi.com/markets/kxmlbtest"
