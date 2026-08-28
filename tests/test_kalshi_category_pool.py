@@ -41,7 +41,8 @@ class _Client:
                 'series_ticker': 'POL1',
                 'markets': [{
                     'ticker': 'POL1-MKT',
-                    'title': 'Will Congress pass the bill?',
+                    # Deliberately generic: category must come from Kalshi's Series metadata.
+                    'title': 'Will outcome A happen?',
                     'volume_fp': '5000',
                     'volume_24h_fp': '2400',
                 }],
@@ -52,7 +53,8 @@ class _Client:
                 'series_ticker': 'TECH1',
                 'markets': [{
                     'ticker': 'TECH1-MKT',
-                    'title': 'Will OpenAI release a new model?',
+                    # Deliberately generic: no AI/tech keyword can rescue classification.
+                    'title': 'Will outcome B happen?',
                     'volume_fp': '8000',
                     'volume_24h_fp': '4200',
                 }],
@@ -60,7 +62,7 @@ class _Client:
         return _Response({'events': []})
 
 
-def test_category_pool_discovers_politics_and_science_technology(monkeypatch):
+def test_category_pool_discovers_politics_and_science_technology_from_provider_metadata(monkeypatch):
     client = _Client()
     monkeypatch.setattr('app.services.kalshi_category_pool.httpx.AsyncClient', lambda **kwargs: client)
     markets = asyncio.run(fetch_kalshi_category_pool(
