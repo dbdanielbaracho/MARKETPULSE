@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from typing import Mapping
 
@@ -14,6 +14,13 @@ from app.services.relevance import RelevanceSignal, relevance_score
 MIN_DISCOVERY_VOLUME_USD = 1_000.0
 MIN_DISCOVERY_RELEVANCE_SCORE = 20
 
+# Public Discovery should not promote a contract that is effectively at the end
+# of its lifecycle. Keep a one-hour product buffer so cards cannot become stale
+# between API curation, browser rendering, and the next user interaction. The
+# production browser smoke intentionally allows a small execution-time margin
+# and asserts that returned cards still have more than 55 minutes remaining.
+MIN_DISCOVERY_CLOSE_BUFFER_MINUTES = 60
+
 # Venue-specific availability guard. When a user explicitly opens Kalshi and the
 # strict attention gate returns nothing, PrediBeacon may show a small
 # "best available" set instead of a dead 0-card page. These floors are still
@@ -23,7 +30,7 @@ MIN_BEST_AVAILABLE_VOLUME_USD = 500.0
 MIN_BEST_AVAILABLE_RELEVANCE_SCORE = 12
 BEST_AVAILABLE_LIMIT = 6
 
-SEMANTIC_DISCOVERY_VERSION = "semantic-discovery-v1"
+SEMANTIC_DISCOVERY_VERSION = "semantic-discovery-v2"
 
 _THRESHOLD_PATTERNS = (
     re.compile(r"\b(above|below|over|under|more\s+than|less\s+than|at\s+least|at\s+most)\s+(?:us\$|\$|€|£)?\s*\d[\d,]*(?:\.\d+)?", re.I),
@@ -121,6 +128,7 @@ def evaluate_discovery_market(item: Mapping[str, object], *, now: datetime | Non
     trend = _number(item.get("trend_score"))
     observed_at = _datetime(item.get("observed_at"))
     closes_at = _datetime(item.get("closes_at"))
+    minimum_close_time = current + timedelta(minutes=MIN_DISCOVERY_CLOSE_BUFFER_MINUTES)
 
     structurally_valid = (
         bool(str(item.get("canonical_id") or "").strip())
@@ -132,10 +140,10 @@ def evaluate_discovery_market(item: Mapping[str, object], *, now: datetime | Non
         and trend >= 0
         and observed_at is not None
         and (probability is None or 0 <= probability <= 1)
-        and (closes_at is None or closes_at > current)
+        and (closes_at is None or closes_at > minimum_close_time)
     )
     if not structurally_valid:
-        return SemanticDiscoveryDecision(False, 0, activity_confidence(volume), "invalid_market", ("market data is incomplete or invalid",))
+        return SemanticDiscoveryDecision(False, 0, activity_confidence(volume), "invalid_market", ("market data is incomplete, invalid, or too close to settlement",))
 
     market = SimpleNamespace(
         probability=probability,
