@@ -120,7 +120,12 @@ async def fetch_kalshi_category_pool(
                             item["event_ticker"] = event_ticker
                         if series and not item.get("series_ticker"):
                             item["series_ticker"] = series
-                        item["_predibeacon_series_category"] = category
+                        # Category belongs to Series in Kalshi. Preserve that
+                        # official provider metadata on the nested market so the
+                        # normalizer does not have to infer Politics/Tech from
+                        # words in the title.
+                        if category and not item.get("category"):
+                            item["category"] = category
                         markets.append(item)
                 return markets
 
