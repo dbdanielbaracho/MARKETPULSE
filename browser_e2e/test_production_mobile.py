@@ -48,12 +48,18 @@ def _find_visible_routable_market(page, request):
         "els => [...new Set(els.map(el => el.getAttribute('href')).filter(Boolean))]"
     )
     assert hrefs, "production homepage rendered no internal market links"
-    for href in hrefs:
-        slug = href.removeprefix("/markets/")
-        response = request.get(f"/api/v1/markets/{quote(slug, safe='')}", timeout=20_000)
-        if not response.ok:
+    visible_slugs = {href.removeprefix("/markets/") for href in hrefs}
+
+    response = request.get("/api/v1/markets?limit=100", timeout=25_000)
+    assert response.ok, response.status
+    markets = response.json()
+    assert markets, "production discovery returned no markets"
+    markets_by_slug = {market.get("slug"): market for market in markets if market.get("slug")}
+
+    for slug in visible_slugs:
+        market = markets_by_slug.get(slug)
+        if not market:
             continue
-        market = response.json()
         market_id = market.get("canonical_id")
         venue = market.get("venue")
         if not market_id or venue not in {"kalshi", "polymarket"}:
