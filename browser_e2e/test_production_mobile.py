@@ -36,6 +36,37 @@ def _find_routable_market(request):
     pytest.fail("no routable production market found for mobile acceptance")
 
 
+def _find_visible_routable_market(page, request):
+    """Choose the journey target from the cards the customer can actually see.
+
+    The homepage is a ranked discovery view and is intentionally not identical to
+    the generic /api/v1/markets ordering. Selecting a market from that unrelated
+    endpoint made this acceptance test fail whenever ranking changed even though
+    the real mobile journey was healthy.
+    """
+    hrefs = page.locator("#grid a[href^='/markets/']").evaluate_all(
+        "els => [...new Set(els.map(el => el.getAttribute('href')).filter(Boolean))]"
+    )
+    assert hrefs, "production homepage rendered no internal market links"
+    for href in hrefs:
+        slug = href.removeprefix("/markets/")
+        response = request.get(f"/api/v1/markets/{quote(slug, safe='')}", timeout=20_000)
+        if not response.ok:
+            continue
+        market = response.json()
+        market_id = market.get("canonical_id")
+        venue = market.get("venue")
+        if not market_id or venue not in {"kalshi", "polymarket"}:
+            continue
+        route = request.get(
+            "/api/v1/market/route?market_id=" + quote(market_id, safe=""),
+            timeout=20_000,
+        )
+        if route.ok and route.json().get("available") is True:
+            return market
+    pytest.fail("no visible routable production market found for mobile acceptance")
+
+
 def test_mobile_home_is_single_column_touch_ready_and_responsive():
     with sync_playwright() as p:
         browser = p.chromium.launch()
@@ -121,7 +152,6 @@ def test_mobile_full_journey_home_to_internal_market_then_safe_external_cta():
     with sync_playwright() as p:
         browser = p.chromium.launch()
         request = p.request.new_context(base_url=CUSTOM)
-        market = _find_routable_market(request)
         context = browser.new_context(viewport={"width": 390, "height": 844}, is_mobile=True, has_touch=True)
         page = context.new_page()
         errors: list[str] = []
@@ -138,6 +168,7 @@ def test_mobile_full_journey_home_to_internal_market_then_safe_external_cta():
             response = page.goto(CUSTOM, wait_until="domcontentloaded", timeout=30_000)
             assert response is not None and response.status < 500
             page.wait_for_function("document.querySelectorAll('#grid .card').length > 0", timeout=20_000)
+            market = _find_visible_routable_market(page, request)
 
             detail_path = f"/markets/{market['slug']}"
             detail_link = page.locator(f"#grid a[href='{detail_path}']").first
