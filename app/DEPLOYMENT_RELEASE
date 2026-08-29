@@ -1,0 +1,5 @@
+PrediBeacon deployment release marker.
+
+Purpose: force the production service to rebuild/redeploy after test-only commits #236 and #237 were merged without advancing RAILWAY_GIT_COMMIT_SHA in production.
+
+This file has no runtime behavior.
